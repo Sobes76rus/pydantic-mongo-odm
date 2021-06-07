@@ -1,0 +1,6 @@
+__pycache__
+.venv
+.mypy_cache
+.vscode
+.mongodb
+dist

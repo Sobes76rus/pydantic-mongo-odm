@@ -1,0 +1,54 @@
+from random import randint
+
+import pytest
+
+from overlead.odm.motor.model import ObjectIdModel
+
+pytestmark = pytest.mark.asyncio
+
+
+class Motor(ObjectIdModel):
+    value: int
+
+    class Meta:
+        database_name = 'overlead-odm-test'
+        collection_name = 'motor'
+
+
+@pytest.fixture(autouse=True, scope='module')
+def set_client(motor_client):
+    Motor.__meta__.client = motor_client
+
+
+@pytest.fixture(autouse=True, scope='function')
+async def clear_database():
+    await Motor.delete_many({})
+
+
+async def test_motor_save_new():
+    assert await Motor.count_documents({}) == 0
+
+    a = Motor(value=123)
+    await a.save()
+
+    assert await Motor.count_documents({}) == 1
+    assert await Motor.collection.find_one({}) == {'_id': a.id, 'value': 123}
+    assert await Motor.find_one({'_id': a.id}) == a
+    assert await Motor.find_one({'_id': a.id}) is not a
+
+
+async def test_motor_delete():
+    assert await Motor.count_documents({}) == 0
+
+    models = [await Motor(value=i).save() for i in range(10)]
+    assert await Motor.count_documents({}) == len(models)
+
+    model = models[randint(0, len(models))]
+    await model.delete()
+
+    assert await Motor.count_documents({}) == len(models) - 1
+    assert await Motor.count_documents({'_id': model.id}) == 0
+
+    models.remove(model)
+    for model in models:
+        assert await Motor.find_one({'_id': model.id}) == model

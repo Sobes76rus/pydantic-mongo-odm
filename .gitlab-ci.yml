@@ -1,0 +1,33 @@
+image: python:3.9.5-alpine
+
+services:
+  - mongo:latest
+
+stages:
+  # - setup
+  # - test
+  - publish
+
+install:
+  stage: setup
+  script:
+    - pip install poetry
+
+test:
+  stage: test
+  script:
+    - poetry run task test
+
+publish-package:
+  stage: publish
+  script:
+    - pip install poetry
+    # - poetry install
+    # - poetry version patch
+    - poetry config repositories.gitlab https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/pypi
+    - poetry config http-basic.gitlab gitlab-ci-token ${CI_JOB_TOKEN}
+    - poetry build
+    - poetry publish -r gitlab
+
+  only:
+    - master
