@@ -21,7 +21,7 @@ stages:
 publish-package:
   stage: publish
   script:
-    - pip install poetry
+    - curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
     # - poetry install
     # - poetry version patch
     - poetry config repositories.gitlab https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/pypi
