@@ -3,7 +3,10 @@ name = "overlead-odm"
 version = "0.1.1"
 description = ""
 authors = ["Your Name <you@example.com>"]
-packages = [{ include = "overlead", from = "src" }, { include = "typings" }]
+packages = [
+  { include = "overlead", from = "src" },
+  { include = "*", from = "typings" }
+]
 
 [tool.poetry.dependencies]
 python = "^3.9"
