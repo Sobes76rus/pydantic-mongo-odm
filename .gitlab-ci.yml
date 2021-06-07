@@ -23,6 +23,7 @@ publish-package:
   script:
     - apk add --no-cache libffi-dev openssl-dev curl
     - curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/install-poetry.py | python -
+    - source $HOME/.poetry/env
     # - pip install poetry
     # - poetry install
     # - poetry version patch
