@@ -21,7 +21,7 @@ stages:
 publish-package:
   stage: publish
   script:
-    - apt install curl -y
+    - apk add --no-cache libffi-dev openssl-dev curl
     - curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
     # - poetry install
     # - poetry version patch
