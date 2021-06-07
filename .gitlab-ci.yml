@@ -8,15 +8,15 @@ stages:
   # - test
   - publish
 
-install:
-  stage: setup
-  script:
-    - pip install poetry
+# install:
+#   stage: setup
+#   script:
+#     - pip install poetry
 
-test:
-  stage: test
-  script:
-    - poetry run task test
+# test:
+#   stage: test
+#   script:
+#     - poetry run task test
 
 publish-package:
   stage: publish
