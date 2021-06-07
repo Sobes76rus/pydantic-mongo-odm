@@ -22,7 +22,7 @@ pytest-asyncio = "^0.15.1"
 taskipy = "^1.8.1"
 
 [[tool.poetry.source]]
-name = "overlead"
+name = "gitlab-overlead"
 url = "https://gitlab.com/api/v4/groups/2174930/packages/pypi"
 
 [tool.taskipy.tasks]
