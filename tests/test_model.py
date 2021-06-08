@@ -111,5 +111,3 @@ def test_client_corrent_collection_name(value):
             collection_name = value
 
     assert TestModel.collection_name == value
-
-

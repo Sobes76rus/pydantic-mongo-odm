@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from overlead.odm.fields.objectid_field import ObjectId
@@ -7,6 +9,15 @@ from overlead.odm.types import undefined
 
 class ModelObjectId(ObjectIdModel):
     pass
+
+
+def test_model_json():
+    a = ModelObjectId()
+    assert a.json() == json.dumps({})
+    assert a.dict() == {}
+    a = ModelObjectId(_id=ObjectId())
+    assert a.json() == json.dumps({'id': str(a.id)})
+    assert a.dict() == {'_id': a.id}
 
 
 @pytest.mark.parametrize(

@@ -13,6 +13,7 @@ python = "^3.9"
 pydantic = "^1.8.2"
 pymongo = "^3.11.4"
 motor = "^2.4.0"
+orjson = "^3.5.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
@@ -26,7 +27,7 @@ taskipy = "^1.8.1"
 
 [[tool.poetry.source]]
 name = "gitlab-overlead"
-url = "https://gitlab.com/api/v4/groups/2174930/packages/pypi"
+url = "https://gitlab.com/api/v4/groups/2174930/-/packages/pypi/simple"
 
 [tool.taskipy.tasks]
 lint = "mypy src/"

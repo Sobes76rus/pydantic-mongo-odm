@@ -13,6 +13,7 @@ class Motor(ObjectIdModel):
     class Meta:
         database_name = 'overlead-odm-test'
         collection_name = 'motor'
+        indexes = ('value', {'value': 'hashed'}, ('-value', {'unique': True}), ['_id', 'value'])
 
 
 @pytest.fixture(autouse=True, scope='module')
@@ -25,11 +26,25 @@ async def clear_database():
     await Motor.delete_many({})
 
 
+async def test_ensure_indexes():
+    await Motor.collection.drop_indexes()
+    assert len(await Motor.collection.list_indexes().to_list(None)) == 1
+    await Motor.ensure_indexes()
+    assert len(await Motor.collection.list_indexes().to_list(None)) == 5
+
+
+async def test_ensure_all_indexes():
+    await Motor.collection.drop_indexes()
+    assert len(await Motor.collection.list_indexes().to_list(None)) == 1
+    await ObjectIdModel.ensure_all_indexes()
+    assert len(await Motor.collection.list_indexes().to_list(None)) == 5
+
+
 async def test_motor_save_new():
     assert await Motor.count_documents({}) == 0
 
     a = Motor(value=123)
-    await a.save()
+    a = await a.save()
 
     assert await Motor.count_documents({}) == 1
     assert await Motor.collection.find_one({}) == {'_id': a.id, 'value': 123}
@@ -43,7 +58,7 @@ async def test_motor_delete():
     models = [await Motor(value=i).save() for i in range(10)]
     assert await Motor.count_documents({}) == len(models)
 
-    model = models[randint(0, len(models))]
+    model = models[randint(0, len(models) - 1)]
     await model.delete()
 
     assert await Motor.count_documents({}) == len(models) - 1

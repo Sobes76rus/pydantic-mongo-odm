@@ -64,12 +64,15 @@ class MotorModel(BaseModel[T], Generic[T]):
         self._olds = data
         return self
 
+    @overload
     async def delete(self: M) -> M:
+        ...
+
+    async def delete(self: MotorModel[T]) -> MotorModel[T]:
         if not self.is_created:
             raise ValueError(f'object is not created\n{self}')
 
         await self.delete_one({'_id': self.id})
-
         return self
 
     @classmethod
@@ -118,6 +121,29 @@ class MotorModel(BaseModel[T], Generic[T]):
     async def aggregate():
         pass
 
+    @classmethod
+    async def ensure_indexes(cls) -> None:
+        indexes = cls.__meta__.indexes
+        for index in indexes:
+            index = index.dict()
+            keys, opts = index['keys'], index['opts']
+            keys = list(keys.items())
+
+            await cls.collection.create_index(keys, **opts)
+
+    @classmethod
+    async def ensure_all_indexes(cls) -> None:
+        for collection in cls.__registry__:
+            if issubclass(collection, cls):
+                try:
+                    collection.collection
+                except ValueError:
+                    continue
+
+                print(f'{collection}: Ensure indexes')
+                await collection.ensure_indexes()
+
 
 class ObjectIdModel(MotorModel[ObjectId]):
-    pass
+    class Config:
+        json_encoders = {ObjectId: str}

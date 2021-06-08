@@ -8,7 +8,10 @@ from collections.abc import Awaitable
 from typing import Any
 from typing import Dict
 from typing import List
+from typing import Literal
 from typing import Optional
+from typing import Tuple
+from typing import Union
 
 import pymongo
 import pymongo.mongo_client
@@ -16,6 +19,7 @@ from bson.codec_options import CodecOptions
 from motor.docstrings import *
 from pymongo.change_stream import ChangeStream
 from pymongo.client_session import ClientSession
+from pymongo.collation import Collation
 from pymongo.collection import Collection
 from pymongo.command_cursor import CommandCursor
 from pymongo.command_cursor import RawBatchCommandCursor
@@ -537,8 +541,29 @@ class AgnosticCollection(AgnosticBaseProperties):
     __motor_class_name__: str = ...
     __delegate_class__ = Collection
     bulk_write = ...
-    count_documents = ...
-    create_index = ...
+
+    def count_documents(self, *args: Any, **kwargs: Any) -> Awaitable[int]:
+        ...
+
+    def create_index(
+        self,
+        keys: Union[str, List[Tuple[str, Literal[1], Literal[-1], Literal['text'], Literal['hashed']]]],
+        session: Optional[AgnosticClientSession],
+        name: Optional[str],
+        unique: Optional[bool],
+        background: Optional[bool],
+        sparse: Optional[bool],
+        bucketSize: Optional[int],
+        min: Optional[int],
+        max: Optional[int],
+        expireAfterSeconds: Optional[int],
+        partialFilterExpression: Optional[Any],
+        collation: Optional[Collation],
+        wildcardProjection: Optional[bool],
+        hidden: Optional[bool],
+    ) -> Awaitable[str]:
+        ...
+
     create_indexes = ...
 
     def delete_many(*args, **kwargs: Any) -> Awaitable[DeleteResult]:
@@ -855,7 +880,7 @@ class AgnosticCollection(AgnosticBaseProperties):
         """
         ...
 
-    def list_indexes(self, session=...):  # -> _:
+    def list_indexes(self, session=...) -> AgnosticLatentCommandCursor:  # -> _:
         """Get a cursor over the index documents for this collection. ::
 
           async def print_indexes():

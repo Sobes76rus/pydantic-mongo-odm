@@ -23,13 +23,14 @@ from pydantic.utils import sequence_like
 from overlead.odm.types import Undefined
 from overlead.odm.types import undefined
 
-if TYPE_CHECKING:
+from .index import Index
 
+if TYPE_CHECKING:
     MetaType = Type['BaseMeta']
 
 DictStrAny = Dict[str, Any]
 
-ModelIdType = TypeVar('ModelIDType')
+ModelIdType = TypeVar('ModelIdType')
 T = TypeVar('T')
 M = TypeVar('M', bound='BaseModel')
 
@@ -44,16 +45,21 @@ def inherit_meta(self_meta: 'MetaType', parent_meta: 'MetaType', **namespace: An
     else:
         base_classes = self_meta, parent_meta
 
-    namespace['indexes'] = tuple({
-        *getattr(parent_meta, 'indexes', []),
-        *getattr(self_meta, 'indexes', []),
-    })
+    indexes = getattr(self_meta, 'indexes', [])
+    if not isinstance(indexes, (tuple, list)):
+        raise TypeError(f'indexes: {indexes}')
+
+    namespace['indexes'] = tuple(
+        Index.parse_obj(o) for o in (
+            *getattr(parent_meta, 'indexes', []),
+            *getattr(self_meta, 'indexes', []),
+        ))
 
     return type('Meta', base_classes, namespace)
 
 
 class BaseMeta:
-    indexes: Tuple[Any, ...] = ()
+    indexes: tuple[Index, ...] = ()
     client: Optional[AsyncIOMotorClient] = None
     database_name: Optional[str] = None
     collection_name: Optional[str] = None
@@ -85,14 +91,30 @@ class BaseModelMetaclass(ModelMetaclass):
 _is_base_document_class_defined = False
 
 
+def exclude_undefined_values(v: T) -> T:
+    if isinstance(v, dict):
+        return {k: exclude_undefined_values(v) for k, v in v.items() if v is not undefined}  # type: ignore
+
+    if sequence_like(v):
+        seq = (exclude_undefined_values(val) for val in v if val is not undefined)  # type: ignore
+        return v.__class__(*seq) if is_namedtuple(v.__class__) else v.__class__(seq)
+
+    return v
+
+
 class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclass):
     if TYPE_CHECKING:
         __meta__: Type[BaseMeta]
 
+    __registry__: list[Type[BaseModel[ModelIdType]]] = []
     _refs = defaultdict(lambda: defaultdict(set))
     _olds: DictStrAny = PrivateAttr({})
 
     id: Undefined[ModelIdType] = Field(undefined, alias='_id')
+
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+        cls.__registry__.append(cls)
 
     class Meta:
         indexes = ('_id', )
@@ -106,20 +128,24 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
 
     def dict(self, **kwargs: Any) -> DictStrAny:
         kwargs.setdefault('by_alias', True)
-        return super().dict(**kwargs)
+        exclude_undefined = kwargs.pop('exclude_undefined', True)
+        values = super().dict(**kwargs)
+
+        if exclude_undefined:
+            values = exclude_undefined_values(values)
+
+        return values
 
     def _dump(self) -> DictStrAny:
-        def del_undefined(v: T) -> T:
-            if isinstance(v, dict):
-                return {k: del_undefined(v) for k, v in v.items() if v is not undefined}  # type: ignore
-
-            if sequence_like(v):
-                seq = (del_undefined(val) for val in v if val is not undefined)  # type: ignore
-                return v.__class__(*seq) if is_namedtuple(v.__class__) else v.__class__(seq)
-
-            return v
-
-        return del_undefined(self.dict())
+        return self.dict(
+            exclude_undefined=True,
+            exclude=None,
+            include=None,
+            exclude_defaults=False,
+            exclude_none=False,
+            exclude_unset=False,
+            by_alias=True,
+        )
 
     @classmethod
     def _load(cls: Type[M], data: DictStrAny) -> M:
