@@ -17,6 +17,7 @@ from pymongo.results import UpdateResult
 
 from overlead.odm.fields import ObjectId
 from overlead.odm.model import BaseModel
+from overlead.odm.types import Undefined
 from overlead.odm.types import undefined
 
 from .cursor import MotorCursor
@@ -145,5 +146,4 @@ class MotorModel(BaseModel[T], Generic[T]):
 
 
 class ObjectIdModel(MotorModel[ObjectId]):
-    class Config:
-        json_encoders = {ObjectId: str}
+    pass

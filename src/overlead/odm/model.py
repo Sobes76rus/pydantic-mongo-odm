@@ -13,7 +13,6 @@ from typing import TypeVar
 from motor.motor_asyncio import AsyncIOMotorClient
 from motor.motor_asyncio import AsyncIOMotorCollection
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pydantic import Field
 from pydantic import PrivateAttr
 from pydantic.generics import GenericModel as PydanticModel
 from pydantic.main import ModelMetaclass
@@ -110,7 +109,7 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
     _refs = defaultdict(lambda: defaultdict(set))
     _olds: DictStrAny = PrivateAttr({})
 
-    id: Undefined[ModelIdType] = Field(undefined, alias='_id')
+    id: Undefined[ModelIdType] = undefined
 
     def __init_subclass__(cls):
         super().__init_subclass__()
@@ -121,6 +120,7 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
 
     class Config:
         validate_assignment = True
+        fields = {'id': '_id'}
 
     @property
     def is_created(self) -> bool:

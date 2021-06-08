@@ -57,3 +57,7 @@ def test_model_objectid_ok_id_assign(value):
     assert a.id != ObjectId(value) if value is not undefined else value
     a.id = value
     assert a.id == ObjectId(value) if value is not undefined else value
+
+
+def test_schema():
+    assert ModelObjectId.schema() == True
