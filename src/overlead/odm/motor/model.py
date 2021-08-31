@@ -8,8 +8,17 @@ from typing import Generic
 from typing import Optional
 from typing import Type
 from typing import TypeVar
+from typing import Union
 from typing import overload
 
+from motor.core import AgnosticClientSession
+from pymongo import DeleteMany
+from pymongo import DeleteOne
+from pymongo import InsertOne
+from pymongo import ReplaceOne
+from pymongo import UpdateMany
+from pymongo import UpdateOne
+from pymongo.results import BulkWriteResult
 from pymongo.results import DeleteResult
 from pymongo.results import InsertManyResult
 from pymongo.results import InsertOneResult
@@ -115,12 +124,24 @@ class MotorModel(BaseModel[T], Generic[T]):
         return cls.collection.count_documents(*args, **kwargs)
 
     @classmethod
-    async def bulk_write():
-        pass
+    def bulk_write(
+        cls,
+        requests: list[Union[InsertOne, UpdateOne, UpdateMany, ReplaceOne, DeleteOne, DeleteMany]],
+        *,
+        ordered: bool = True,
+        bypass_document_validation: bool = False,
+        session: Optional[AgnosticClientSession] = None,
+    ) -> Awaitable[BulkWriteResult]:
+        return cls.collection.bulk_write(
+            requests,
+            ordered=ordered,
+            bypass_document_validation=bypass_document_validation,
+            session=session,
+        )
 
     @classmethod
-    async def aggregate():
-        pass
+    def aggregate(cls, pipeline: list[dict[str, Any]], **kwargs: Any) -> Awaitable[list[dict[str, Any]]]:
+        return cls.collection.aggregate(pipeline, **kwargs)
 
     @classmethod
     async def ensure_indexes(cls) -> None:
