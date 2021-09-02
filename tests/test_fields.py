@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 import pytest
@@ -106,3 +107,8 @@ def test_reference_wrong_values(value, error, type_):
 
     assert error in str(exc.value)
     assert f'(type={type_})' in str(exc.value)
+
+
+def test_reference_jsonable():
+    model = ReferenceModel(value=ObjectId())
+    assert model.json() == json.dumps({'value': str(model.value)})

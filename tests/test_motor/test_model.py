@@ -60,4 +60,4 @@ def test_model_objectid_ok_id_assign(value):
 
 
 def test_schema():
-    assert ModelObjectId.schema() == True
+    assert bool(ModelObjectId.schema()) == True

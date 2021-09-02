@@ -8,6 +8,7 @@ from typing import TypeVar
 from typing import Union
 
 from pydantic.fields import ModelField
+from pydantic.json import ENCODERS_BY_TYPE
 
 from overlead.odm.fields.objectid_field import ObjectId
 from overlead.odm.fields.objectid_field import ObjectIdType
@@ -62,3 +63,12 @@ class Reference(ObjectId, Generic[M]):
 
     def load(self) -> M:
         return self.type_.find_one({'_id': self})
+
+    def __modify_schema__(self, field_schema):
+        field_schema.update(
+            type='string',
+            examples=["5eb7cf5a86d9755df3a6c593", "5eb7cfb05e32e07750a1756a"],
+        )
+
+
+ENCODERS_BY_TYPE[Reference] = str
