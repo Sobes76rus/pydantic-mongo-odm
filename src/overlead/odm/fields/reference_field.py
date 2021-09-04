@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import enum
-from abc import ABCMeta
+from typing import Awaitable
 from typing import Generic
 from typing import Type
 from typing import TypeVar
 from typing import Union
+from typing import overload
 
 from pydantic.fields import ModelField
 from pydantic.json import ENCODERS_BY_TYPE
@@ -13,8 +14,10 @@ from pydantic.json import ENCODERS_BY_TYPE
 from overlead.odm.fields.objectid_field import ObjectId
 from overlead.odm.fields.objectid_field import ObjectIdType
 from overlead.odm.model import BaseModel
+from overlead.odm.motor.model import MotorModel
 
 M = TypeVar('M', bound=BaseModel)
+MM = TypeVar('MM', bound=MotorModel)
 
 
 class DeleteRule(str, enum.Enum):
@@ -61,7 +64,15 @@ class Reference(ObjectId, Generic[M]):
 
         return cls(ObjectId.validate(v), type_, field)
 
-    def load(self) -> M:
+    @overload
+    def load(self: Reference[MM]) -> Awaitable[MM]:
+        ...
+
+    @overload
+    def load(self: Reference[M]) -> M:
+        ...
+
+    def load(self):
         return self.type_.find_one({'_id': self})
 
     def __modify_schema__(self, field_schema):
