@@ -75,6 +75,7 @@ class Reference(ObjectId, Generic[M]):
     def load(self):
         return self.type_.find_one({'_id': self})
 
+    @classmethod
     def __modify_schema__(self, field_schema):
         field_schema.update(
             type='string',
