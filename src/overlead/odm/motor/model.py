@@ -70,7 +70,9 @@ class MotorModel(BaseModel[T], Generic[T]):
             else:
                 upds['$set'][key] = new
 
-        await self.update_one({'_id': self.id}, upds)
+        if upds:
+            await self.update_one({'_id': self.id}, upds)
+
         self._olds = data
         return self
 

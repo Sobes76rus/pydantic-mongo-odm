@@ -127,7 +127,7 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         return self.id is not undefined and self.id is not None
 
     def dict(self, **kwargs: Any) -> DictStrAny:
-        kwargs.setdefault('by_alias', True)
+        # kwargs.setdefault('by_alias', True)
         exclude_undefined = kwargs.pop('exclude_undefined', True)
         values = super().dict(**kwargs)
 
