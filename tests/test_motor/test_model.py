@@ -17,7 +17,7 @@ def test_model_json():
     assert a.dict() == {}
     a = ModelObjectId(_id=ObjectId())
     assert a.json() == json.dumps({'id': str(a.id)})
-    assert a.dict() == {'_id': a.id}
+    assert a.dict() == {'id': a.id}
 
 
 @pytest.mark.parametrize(

@@ -142,7 +142,7 @@ class MotorModel(BaseModel[T], Generic[T]):
         )
 
     @classmethod
-    def aggregate(cls, pipeline: list[dict[str, Any]], **kwargs: Any) -> Awaitable[list[dict[str, Any]]]:
+    def aggregate(cls, pipeline: list[dict[str, Any]], **kwargs: Any) -> Any:
         return cls.collection.aggregate(pipeline, **kwargs)
 
     @classmethod

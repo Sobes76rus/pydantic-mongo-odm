@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+from typing import TYPE_CHECKING
 from typing import Awaitable
 from typing import Generic
 from typing import Type
@@ -14,10 +15,12 @@ from pydantic.json import ENCODERS_BY_TYPE
 from overlead.odm.fields.objectid_field import ObjectId
 from overlead.odm.fields.objectid_field import ObjectIdType
 from overlead.odm.model import BaseModel
-from overlead.odm.motor.model import MotorModel
 
 M = TypeVar('M', bound=BaseModel)
-MM = TypeVar('MM', bound=MotorModel)
+
+if TYPE_CHECKING:
+    from overlead.odm.motor.model import MotorModel
+    MM = TypeVar('MM', bound=MotorModel)
 
 
 class DeleteRule(str, enum.Enum):
@@ -65,7 +68,7 @@ class Reference(ObjectId, Generic[M]):
         return cls(ObjectId.validate(v), type_, field)
 
     @overload
-    def load(self: Reference[MM]) -> Awaitable[MM]:
+    def load(self: Reference['MM']) -> Awaitable['MM']:
         ...
 
     @overload

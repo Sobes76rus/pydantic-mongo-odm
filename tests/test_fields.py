@@ -4,11 +4,13 @@ import json
 from typing import Optional
 
 import pytest
+from pydantic import BaseModel as PydanticBaseModel
 from pydantic import ValidationError
 
 from overlead.odm.fields.objectid_field import ObjectId
 from overlead.odm.fields.reference_field import Reference
 from overlead.odm.model import BaseModel
+from overlead.odm.motor.model import ObjectIdModel as OIDModel
 
 
 class ObjectIdModel(BaseModel):
@@ -112,3 +114,17 @@ def test_reference_wrong_values(value, error, type_):
 def test_reference_jsonable():
     model = ReferenceModel(value=ObjectId())
     assert model.json() == json.dumps({'value': str(model.value)})
+
+
+async def test_reference_model():
+    class Ref(PydanticBaseModel):
+        ref: Reference[ReferenceModel]
+
+    class RefOID(OIDModel):
+        ref: Reference[RefOID]
+
+    r = Ref(ref=ObjectId())
+    # await r.ref.load()
+
+    r = RefOID(ref=ObjectId())
+    # await r.ref.load()
