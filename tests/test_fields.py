@@ -145,3 +145,9 @@ def test_reference_pickle():
     assert isinstance(new, Reference)
     assert new == ref
     assert new.type_ == ReferenceModel
+
+    new = pickle.loads(pickle.dumps(new))
+
+    assert isinstance(new, Reference)
+    assert new == ref
+    assert new.type_ == ReferenceModel

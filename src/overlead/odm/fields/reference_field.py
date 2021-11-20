@@ -88,7 +88,8 @@ class Reference(ObjectId, Generic[M]):
     def __getstate__(self):
         state = self.__dict__.copy()
         state['_ObjectId__id'] = self._ObjectId__id
-        del state['field']
+        if 'field' in state:
+            del state['field']
         return state
 
     def __setstate__(self, state):
