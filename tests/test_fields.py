@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 from typing import Optional
 
 import pytest
@@ -128,3 +129,19 @@ async def test_reference_model():
 
     r = RefOID(ref=ObjectId())
     # await r.ref.load()
+
+
+def test_reference_pickle():
+    value = ObjectId()
+    a = ReferenceModel(value=value)
+    ref = a.value
+
+    assert isinstance(ref, Reference)
+    assert ref.type_ == ReferenceModel
+    assert ref == ref
+
+    new = pickle.loads(pickle.dumps(ref))
+
+    assert isinstance(new, Reference)
+    assert new == ref
+    assert new.type_ == ReferenceModel

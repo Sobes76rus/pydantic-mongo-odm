@@ -85,5 +85,15 @@ class Reference(ObjectId, Generic[M]):
             examples=["5eb7cf5a86d9755df3a6c593", "5eb7cfb05e32e07750a1756a"],
         )
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state['_ObjectId__id'] = self._ObjectId__id
+        del state['field']
+        return state
+
+    def __setstate__(self, state):
+        self._ObjectId__id = state.pop('_ObjectId__id')
+        self.__dict__.update(state)
+
 
 ENCODERS_BY_TYPE[Reference] = str
