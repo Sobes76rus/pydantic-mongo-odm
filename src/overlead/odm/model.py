@@ -13,6 +13,7 @@ from typing import TypeVar
 from motor.motor_asyncio import AsyncIOMotorClient
 from motor.motor_asyncio import AsyncIOMotorCollection
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import PrivateAttr
 from pydantic.generics import GenericModel as PydanticModel
 from pydantic.main import ModelMetaclass
@@ -157,6 +158,7 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         client: AsyncIOMotorClient
         database: AsyncIOMotorDatabase
         collection: AsyncIOMotorCollection
+        gridfs: AsyncIOMotorGridFSBucket
 
         collection_name: str
         database_name: str
@@ -205,6 +207,11 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         @property
         def collection(cls) -> AsyncIOMotorCollection:
             return cls.database.get_collection(cls.collection_name)
+
+        @classmethod
+        @property
+        def gridfs(cls) -> AsyncIOMotorGridFSBucket:
+            return AsyncIOMotorGridFSBucket(cls.database)
 
 
 _is_base_document_class_defined = True

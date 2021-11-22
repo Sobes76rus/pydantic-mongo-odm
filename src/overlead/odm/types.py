@@ -15,15 +15,15 @@ from pydantic.json import ENCODERS_BY_TYPE
 __all__ = ['Undefined', 'undefined']
 
 UndefinedType = TypeVar('UndefinedType')
-Und = TypeVar('Und', bound='Undefined')
+Und = TypeVar('Und', bound='UndefinedClass')
 
 
-class Undefined(Generic[UndefinedType]):
-    singleton: Optional[Undefined[UndefinedType]] = None
+class UndefinedClass(Generic[UndefinedType]):
+    singleton: Optional[UndefinedClass[UndefinedType]] = None
 
     def __new__(cls: Type[Und], *args: Any) -> Und[UndefinedType]:
         if not cls.singleton:
-            singleton: Undefined[UndefinedType] = super().__new__(cls, *args)
+            singleton: UndefinedClass[UndefinedType] = super().__new__(cls, *args)
             cls.singleton = singleton
 
         return cls.singleton
@@ -41,10 +41,10 @@ class Undefined(Generic[UndefinedType]):
     @classmethod
     def validate(
         cls,
-        v: Union[Undefined[UndefinedType], UndefinedType],
+        v: Undefined[UndefinedType],
         values: dict[str, Any],
         field: ModelField,
-    ) -> Union[Undefined[UndefinedType], UndefinedType]:
+    ) -> Undefined[UndefinedType]:
         if not field.sub_fields:
             raise TypeError('required')
 
@@ -59,14 +59,14 @@ class Undefined(Generic[UndefinedType]):
             return v
 
 
-class UndefinedStr(Undefined[UndefinedType], Generic[UndefinedType]):
+class UndefinedStr(UndefinedClass[UndefinedType], Generic[UndefinedType]):
     @classmethod
     def validate(
         cls,
-        v: Union[Undefined[UndefinedType], UndefinedType, Literal['undefined']],
+        v: Union[Undefined[UndefinedType], Literal['undefined']],
         values: dict[str, Any],
         field: ModelField,
-    ) -> Union[Undefined[UndefinedType], UndefinedType]:
+    ) -> Undefined[UndefinedType]:
         if v == 'undefined':
             return undefined
 
@@ -83,6 +83,8 @@ class Error:
         raise ValueError(v)
 
 
-ENCODERS_BY_TYPE[Undefined] = str
+ENCODERS_BY_TYPE[UndefinedClass] = str
 ENCODERS_BY_TYPE[UndefinedStr] = str
+
+Undefined = Union[UndefinedClass[UndefinedType], UndefinedType]
 undefined = UndefinedStr[Any]()

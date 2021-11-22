@@ -117,18 +117,18 @@ def test_reference_jsonable():
     assert model.json() == json.dumps({'value': str(model.value)})
 
 
-async def test_reference_model():
+def test_reference_model():
     class Ref(PydanticBaseModel):
         ref: Reference[ReferenceModel]
 
     class RefOID(OIDModel):
         ref: Reference[RefOID]
 
-    r = Ref(ref=ObjectId())
-    # await r.ref.load()
+    a = Ref(ref=ObjectId())
+    b = RefOID(_id=ObjectId(), ref=ObjectId())
+    c = RefOID(ref=b)
 
-    r = RefOID(ref=ObjectId())
-    # await r.ref.load()
+    assert c.ref == b.id
 
 
 def test_reference_pickle():
