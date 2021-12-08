@@ -40,4 +40,5 @@ class ObjectId(BSONObjectId):
         )
 
 
+ENCODERS_BY_TYPE[BSONObjectId] = str
 ENCODERS_BY_TYPE[ObjectId] = str

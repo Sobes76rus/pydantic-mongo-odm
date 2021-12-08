@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable
 from typing import Any
@@ -24,8 +25,10 @@ from pymongo.results import InsertManyResult
 from pymongo.results import InsertOneResult
 from pymongo.results import UpdateResult
 
+from overlead.odm import triggers
 from overlead.odm.fields import ObjectId
 from overlead.odm.model import BaseModel
+from overlead.odm.triggers import trigger
 from overlead.odm.types import Undefined
 from overlead.odm.types import undefined
 
@@ -44,15 +47,27 @@ class MotorModel(BaseModel[T], Generic[T]):
         ...
 
     async def save(self: MotorModel[T]) -> MotorModel[T]:
-        olds = self._olds
-        data = self._dump()
+        await self.run_triggers(triggers.before_save)
 
         if not self.is_created:
+            await self.run_triggers(triggers.before_create)
+
+            data = self._dump()
+
             result = await self.insert_one(data)
             self.id = result.inserted_id
             self._olds = data
             self._olds['_id'] = self.id
+
+            await self.run_triggers(triggers.after_create)
+            await self.run_triggers(triggers.after_save, created=True)
+
             return self
+
+        await self.run_triggers(triggers.before_update)
+
+        olds = self._olds
+        data = self._dump()
 
         keys = set(data) | set(olds)
         upds: Dict[str, Dict[str, Any]] = defaultdict(dict)
@@ -74,6 +89,10 @@ class MotorModel(BaseModel[T], Generic[T]):
             await self.update_one({'_id': self.id}, upds)
 
         self._olds = data
+
+        await self.run_triggers(triggers.after_update)
+        await self.run_triggers(triggers.after_save, created=False)
+
         return self
 
     @overload
@@ -84,7 +103,9 @@ class MotorModel(BaseModel[T], Generic[T]):
         if not self.is_created:
             raise ValueError(f'object is not created\n{self}')
 
+        await self.run_triggers(triggers.before_delete)
         await self.delete_one({'_id': self.id})
+        await self.run_triggers(triggers.after_delete)
         return self
 
     @classmethod
@@ -110,8 +131,19 @@ class MotorModel(BaseModel[T], Generic[T]):
         return cls.collection.delete_one(*args, **kwargs)
 
     @classmethod
-    def insert_many(cls, *args: Any, **kwargs: Any) -> Awaitable[InsertManyResult]:
-        return cls.collection.insert_many(*args, **kwargs)
+    def insert_many(
+        cls,
+        documents: list,
+        ordered: bool = True,
+        bypass_document_validation: bool = False,
+        session: Optional[AgnosticClientSession] = None,
+    ) -> Awaitable[InsertManyResult]:
+        return cls.collection.insert_many(
+            documents=documents,
+            ordered=ordered,
+            bypass_document_validation=bypass_document_validation,
+            session=session,
+        )
 
     @classmethod
     def update_many(cls, *args: Any, **kwargs: Any) -> Awaitable[UpdateResult]:
@@ -166,6 +198,16 @@ class MotorModel(BaseModel[T], Generic[T]):
 
                 print(f'{collection}: Ensure indexes')
                 await collection.ensure_indexes()
+
+    async def run_triggers(self, type: Type[trigger], **kwargs):
+        for trig in self.get_triggers(type):
+            if asyncio.iscoroutinefunction(trig.func):
+                val = await trig.func(self, **kwargs)
+            else:
+                val = await asyncio.to_thread(trig.func, self, **kwargs)
+
+            while asyncio.iscoroutine(val):
+                val = await val
 
 
 class ObjectIdModel(MotorModel[ObjectId]):

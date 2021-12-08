@@ -10,6 +10,7 @@ from typing import Tuple
 from typing import Type
 from typing import TypeVar
 
+from motor.core import AgnosticClient
 from motor.motor_asyncio import AsyncIOMotorClient
 from motor.motor_asyncio import AsyncIOMotorCollection
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -20,6 +21,7 @@ from pydantic.main import ModelMetaclass
 from pydantic.typing import is_namedtuple
 from pydantic.utils import sequence_like
 
+from overlead.odm.triggers import trigger
 from overlead.odm.types import Undefined
 from overlead.odm.types import undefined
 
@@ -29,7 +31,6 @@ if TYPE_CHECKING:
     MetaType = Type['BaseMeta']
 
 DictStrAny = Dict[str, Any]
-
 ModelIdType = TypeVar('ModelIdType')
 T = TypeVar('T')
 M = TypeVar('M', bound='BaseModel')
@@ -55,14 +56,24 @@ def inherit_meta(self_meta: 'MetaType', parent_meta: 'MetaType', **namespace: An
             *getattr(self_meta, 'indexes', []),
         ))
 
+    triggers = getattr(self_meta, 'triggers', [])
+    if not isinstance(triggers, (tuple, list)):
+        raise TypeError(f'{triggers=}')
+
+    namespace['triggers'] = tuple(trig for trig in (
+        *getattr(parent_meta, 'triggers', []),
+        *getattr(self_meta, 'triggers', []),
+    ))
+
     return type('Meta', base_classes, namespace)
 
 
 class BaseMeta:
     indexes: tuple[Index, ...] = ()
-    client: Optional[AsyncIOMotorClient] = None
+    client: Optional[AgnosticClient] = None
     database_name: Optional[str] = None
     collection_name: Optional[str] = None
+    triggers: tuple[trigger, ...] = ()
 
 
 class BaseModelMetaclass(ModelMetaclass):
@@ -75,6 +86,13 @@ class BaseModelMetaclass(ModelMetaclass):
 
         meta_from_namespace = namespace.get('Meta')
         meta = inherit_meta(meta_from_namespace, meta)
+
+        triggers = list(getattr(meta, 'triggers', []))
+        for key, val in list(namespace.items()):
+            if isinstance(val, trigger):
+                triggers.append(val)
+                del namespace[key]
+        setattr(meta, 'triggers', tuple(triggers))
 
         namespace['__meta__'] = meta
 
@@ -104,8 +122,10 @@ def exclude_undefined_values(v: T) -> T:
 
 class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclass):
     if TYPE_CHECKING:
+        __triggers__: Dict[Type[BaseModel[ModelIdType]], Dict[Type[trigger], list[trigger]]]
         __meta__: Type[BaseMeta]
 
+    __triggers__ = defaultdict(lambda: defaultdict(list))
     __registry__: list[Type[BaseModel[ModelIdType]]] = []
     _refs = defaultdict(lambda: defaultdict(set))
     _olds: DictStrAny = PrivateAttr({})
@@ -115,6 +135,9 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
     def __init_subclass__(cls):
         super().__init_subclass__()
         cls.__registry__.append(cls)
+
+        for trig in cls.__meta__.triggers:
+            cls.__triggers__[cls][trig.__class__].append(trig)
 
     class Meta:
         indexes = ('_id', )
@@ -212,6 +235,10 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         @property
         def gridfs(cls) -> AsyncIOMotorGridFSBucket:
             return AsyncIOMotorGridFSBucket(cls.database)
+
+    @classmethod
+    def get_triggers(cls, type: Type[trigger]) -> list[trigger]:
+        return cls.__triggers__[cls][type]
 
 
 _is_base_document_class_defined = True
