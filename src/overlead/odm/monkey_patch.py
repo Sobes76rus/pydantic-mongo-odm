@@ -22,11 +22,11 @@ try:
     import fastapi.params
 
     def is_scalar_field_patch(field: ModelField) -> bool:
-        if lenient_issubclass(field.type_, SCALAR_TYPES)\
+        if lenient_issubclass(field.type_, tuple(SCALAR_TYPES))\
                 and not isinstance(field.field_info, fastapi.params.Body):
             return True
 
-        if lenient_issubclass(field.type_, SCALAR_GENERIC_TYPES)\
+        if lenient_issubclass(field.type_, tuple(SCALAR_GENERIC_TYPES))\
                 and not isinstance(field.field_info, fastapi.params.Body)\
                 and all(is_scalar_field_patch(f) for f in field.sub_fields):
             return True
