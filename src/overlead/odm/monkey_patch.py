@@ -3,6 +3,7 @@ from __future__ import annotations
 from bson import ObjectId as BSONObjectId
 from pydantic.fields import ModelField
 from pydantic.json import ENCODERS_BY_TYPE
+from pydantic.utils import lenient_issubclass
 
 from overlead.odm.fields import ObjectId
 from overlead.odm.fields import Reference
