@@ -3,7 +3,6 @@ from typing import Union
 
 from bson import ObjectId as BSONObjectId
 from bson.errors import InvalidId
-from pydantic.json import ENCODERS_BY_TYPE
 
 if TYPE_CHECKING:
     from pydantic.typing import CallableGenerator
@@ -38,7 +37,3 @@ class ObjectId(BSONObjectId):
             type="string",
             examples=["5eb7cf5a86d9755df3a6c593", "5eb7cfb05e32e07750a1756a"],
         )
-
-
-ENCODERS_BY_TYPE[BSONObjectId] = str
-ENCODERS_BY_TYPE[ObjectId] = str

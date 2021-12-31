@@ -200,14 +200,26 @@ class MotorModel(BaseModel[T], Generic[T]):
                 await collection.ensure_indexes()
 
     async def run_triggers(self, type: Type[trigger], **kwargs):
-        for trig in self.get_triggers(type):
-            if asyncio.iscoroutinefunction(trig.func):
-                val = await trig.func(self, **kwargs)
-            else:
-                val = await asyncio.to_thread(trig.func, self, **kwargs)
+        def wrapper(func):
+            async def wrapt(*args, **kwargs):
+                return asyncio.to_thread(func, *args, **kwargs)
 
-            while asyncio.iscoroutine(val):
-                val = await val
+            return wrapt
+
+        for trig in self.get_triggers(type):
+
+            if not asyncio.iscoroutinefunction(trig.func):
+                trig.func = wrapper(trig.func)
+
+            gen = trig.exec(self, **kwargs)
+            for val in gen:
+                while asyncio.iscoroutine(val):
+                    val = await val
+
+                try:
+                    gen.send(val)
+                except StopIteration:
+                    pass
 
 
 class ObjectIdModel(MotorModel[ObjectId]):

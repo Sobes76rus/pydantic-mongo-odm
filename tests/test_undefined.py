@@ -1,5 +1,3 @@
-from typing import List
-
 import pytest
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError

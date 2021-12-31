@@ -17,6 +17,7 @@ class Motor(ObjectIdModel):
     after_delete: bool = False
     created: bool = False
     sync: bool = False
+    validator: int = 0
 
     class Meta:
         database_name = 'overlead-odm-test'
@@ -68,6 +69,10 @@ class Motor(ObjectIdModel):
     async def after_delete_trigger(self):
         self.after_delete = True
         assert await Motor.count_documents({'_id': self.id}) == 0
+
+    @triggers.validator('validator')
+    async def validate_validator(self, v):
+        return v + 1
 
 
 @pytest.fixture(autouse=True, scope='module')
@@ -174,3 +179,13 @@ async def test_after_delete():
 
     await doc.delete()
     assert doc.after_delete is True
+
+
+async def test_validator():
+    doc = Motor()
+
+    assert doc.validator == 0
+    await doc.save()
+    assert doc.validator == 1
+    await doc.save()
+    assert doc.validator == 2

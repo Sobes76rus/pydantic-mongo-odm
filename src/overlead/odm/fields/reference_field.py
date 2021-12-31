@@ -10,7 +10,6 @@ from typing import Union
 from typing import overload
 
 from pydantic.fields import ModelField
-from pydantic.json import ENCODERS_BY_TYPE
 
 from overlead.odm.fields.objectid_field import ObjectId
 from overlead.odm.fields.objectid_field import ObjectIdType
@@ -95,6 +94,3 @@ class Reference(ObjectId, Generic[M]):
     def __setstate__(self, state):
         self._ObjectId__id = state.pop('_ObjectId__id')
         self.__dict__.update(state)
-
-
-ENCODERS_BY_TYPE[Reference] = str

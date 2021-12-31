@@ -1,4 +1,9 @@
+from typing import Any
 from typing import Optional
+
+from pydantic import BaseModel
+from pydantic import ValidationError
+from pydantic.error_wrappers import ErrorWrapper
 
 
 class trigger():
@@ -8,6 +13,9 @@ class trigger():
     def __call__(self, func):
         self.func = func
         return self
+
+    def exec(self, *args, **kwargs):
+        yield self.func(*args, **kwargs)
 
 
 class before_save(trigger):
@@ -40,3 +48,17 @@ class before_delete(trigger):
 
 class after_delete(trigger):
     pass
+
+
+class validator(before_save):
+    def __init__(self, *fields: str):
+        super().__init__()
+        self.fields = fields
+
+    def exec(self, inst: BaseModel):
+        for field in self.fields:
+            try:
+                value: Any = yield self.func(inst, getattr(inst, field))
+                setattr(inst, field, value)
+            except (ValueError, TypeError, AssertionError) as exc:
+                raise ValidationError([ErrorWrapper(exc, field)], inst.__class__)

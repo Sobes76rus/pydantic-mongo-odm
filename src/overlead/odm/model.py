@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections import defaultdict
 from typing import TYPE_CHECKING
 from typing import Any
@@ -137,7 +138,10 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         cls.__registry__.append(cls)
 
         for trig in cls.__meta__.triggers:
-            cls.__triggers__[cls][trig.__class__].append(trig)
+            bases = inspect.getmro(trig.__class__)
+            for base in bases:
+                if issubclass(base, trigger):
+                    cls.__triggers__[cls][base].append(trig)
 
     class Meta:
         indexes = ('_id', )

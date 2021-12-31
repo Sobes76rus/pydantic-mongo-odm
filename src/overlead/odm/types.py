@@ -9,6 +9,7 @@ from typing import Type
 from typing import TypeVar
 from typing import Union
 
+from pydantic import ValidationError
 from pydantic.fields import ModelField
 from pydantic.json import ENCODERS_BY_TYPE
 
@@ -54,7 +55,7 @@ class UndefinedClass(Generic[UndefinedType]):
         v, e = field.sub_fields[0].validate(v, values, loc='')
 
         if e:
-            raise e.exc
+            raise ValidationError([e], cls)
         else:
             return v
 
