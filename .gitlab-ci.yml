@@ -1,7 +1,4 @@
-image: python:3.9.5
-
-services:
-  - mongo:latest
+image: python:3.9
 
 stages:
   # - setup
