@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 import pickle
 from typing import Optional
 
+import orjson as json
 import pytest
 from pydantic import BaseModel as PydanticBaseModel
 from pydantic import ValidationError
@@ -114,7 +114,7 @@ def test_reference_wrong_values(value, error, type_):
 
 def test_reference_jsonable():
     model = ReferenceModel(value=ObjectId())
-    assert model.json() == json.dumps({'value': str(model.value)})
+    assert model.json() == json.dumps({'value': str(model.value)}).decode()
 
 
 def test_reference_model():

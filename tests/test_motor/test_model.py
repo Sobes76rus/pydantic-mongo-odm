@@ -1,5 +1,4 @@
-import json
-
+import orjson as json
 import pytest
 
 from overlead.odm.fields.objectid_field import ObjectId
@@ -13,10 +12,10 @@ class ModelObjectId(ObjectIdModel):
 
 def test_model_json():
     a = ModelObjectId()
-    assert a.json() == json.dumps({})
+    assert a.json() == json.dumps({}).decode()
     assert a.dict() == {}
     a = ModelObjectId(_id=ObjectId())
-    assert a.json() == json.dumps({'id': str(a.id)})
+    assert a.json() == json.dumps({'id': str(a.id)}).decode()
     assert a.dict() == {'id': a.id}
 
 

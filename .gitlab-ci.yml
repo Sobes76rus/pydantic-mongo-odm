@@ -21,16 +21,13 @@ stages:
 publish-package:
   stage: publish
   script:
-    # - apk add --no-cache libffi-dev openssl-dev curl
-    # - curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/install-poetry.py | python -
-    # - tee export PATH="/root/.local/bin:$PATH"
     - pip install poetry
-    # - poetry install
-    # - poetry version patch
     - poetry config repositories.gitlab https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/pypi
     - poetry config http-basic.gitlab gitlab-ci-token ${CI_JOB_TOKEN}
-    - poetry build
+    - bash ${POETRY_BUILD_LOCK}
     - poetry publish -r gitlab
-
   only:
-    - master
+    refs:
+      - master
+    changes:
+      - pyproject.toml

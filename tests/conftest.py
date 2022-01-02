@@ -1,36 +1,42 @@
 import asyncio
 
 import pytest
+from testcontainers.compose import DockerCompose
 
 from overlead.odm.client import get_client
 from overlead.odm.motor.model import ObjectIdModel
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(autouse=True, scope='session')
 def event_loop():
     loop = asyncio.get_event_loop()
     yield loop
     loop.close()
 
 
-@pytest.fixture(scope='module')
-def motor_client(event_loop):
-    return get_client(connect=False, motor=True)
+@pytest.fixture(autouse=True, scope='session')
+def start_docker():
+    with DockerCompose(".") as compose:
+        host = compose.get_service_host('mongodb', 27017)
+        port = compose.get_service_port('mongodb', 27017)
+        port = port and int(port)
+
+        ObjectIdModel.__meta__.client = get_client(host=host, port=port, connect=False, motor=True)
+        ObjectIdModel.__meta__.database_name = 'overlead-odm-test'
+
+        yield
 
 
-@pytest.fixture
-def motor_model(motor_client):
-    class Model(ObjectIdModel):
-        class Meta:
-            client = motor_client
-            database_name = 'overlead-odm-test'
-
-    return Model
+@pytest.fixture(autouse=True, scope='function')
+async def clear_database():
+    names = await ObjectIdModel.database.list_collection_names()
+    for name in names:
+        await ObjectIdModel.database.get_collection(name).delete_many({})
 
 
 @pytest.fixture
 def motor_model_A(motor_model):
-    class Model(motor_model):
+    class Model(ObjectIdModel):
         class Meta:
             collection_name = 'collectionA'
 
@@ -39,7 +45,7 @@ def motor_model_A(motor_model):
 
 @pytest.fixture
 def motor_model_B(motor_model):
-    class Model(motor_model):
+    class Model(ObjectIdModel):
         class Meta:
             collection_name = 'collectionB'
 

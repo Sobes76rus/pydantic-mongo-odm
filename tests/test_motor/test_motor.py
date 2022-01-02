@@ -11,19 +11,8 @@ class Motor(ObjectIdModel):
     value: int
 
     class Meta:
-        database_name = 'overlead-odm-test'
         collection_name = 'motor'
         indexes = ('value', {'value': 'hashed'}, ('-value', {'unique': True}), ['_id', 'value'])
-
-
-@pytest.fixture(autouse=True, scope='module')
-def set_client(motor_client):
-    Motor.__meta__.client = motor_client
-
-
-@pytest.fixture(autouse=True, scope='function')
-async def clear_database():
-    await Motor.delete_many({})
 
 
 async def test_ensure_indexes():

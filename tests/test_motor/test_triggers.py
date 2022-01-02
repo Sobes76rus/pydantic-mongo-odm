@@ -75,16 +75,6 @@ class Motor(ObjectIdModel):
         return v + 1
 
 
-@pytest.fixture(autouse=True, scope='module')
-def set_client(motor_client):
-    Motor.__meta__.client = motor_client
-
-
-@pytest.fixture(autouse=True, scope='function')
-async def clear_database():
-    await Motor.delete_many({})
-
-
 async def test_before_save():
     doc = Motor()
     await doc.save()

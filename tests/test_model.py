@@ -1,8 +1,8 @@
+from typing import Any
 from typing import Optional
 from xml.dom import InvalidAccessErr
 
 import pytest
-from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 from motor.motor_asyncio import AsyncIOMotorCollection
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -12,7 +12,7 @@ from overlead.odm.client import get_client
 from overlead.odm.model import BaseModel
 
 
-class ModelTest(BaseModel):
+class ModelTest(BaseModel[Any]):
     value: Optional[str]
 
     class Meta:

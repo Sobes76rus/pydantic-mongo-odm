@@ -4,6 +4,7 @@ import inspect
 from collections import defaultdict
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import ClassVar
 from typing import Dict
 from typing import Generic
 from typing import Optional
@@ -11,14 +12,18 @@ from typing import Tuple
 from typing import Type
 from typing import TypeVar
 
+import orjson
 from motor.core import AgnosticClient
 from motor.motor_asyncio import AsyncIOMotorClient
 from motor.motor_asyncio import AsyncIOMotorCollection
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import PrivateAttr
+from pydantic.fields import Field
+from pydantic.fields import FieldInfo
 from pydantic.generics import GenericModel as PydanticModel
 from pydantic.main import ModelMetaclass
+from pydantic.main import __dataclass_transform__
 from pydantic.typing import is_namedtuple
 from pydantic.utils import sequence_like
 
@@ -31,7 +36,7 @@ from .index import Index
 if TYPE_CHECKING:
     MetaType = Type['BaseMeta']
 
-DictStrAny = Dict[str, Any]
+DictStrAny = dict[str, Any]
 ModelIdType = TypeVar('ModelIdType')
 T = TypeVar('T')
 M = TypeVar('M', bound='BaseModel')
@@ -77,6 +82,7 @@ class BaseMeta:
     triggers: tuple[trigger, ...] = ()
 
 
+@__dataclass_transform__(kw_only_default=True, field_descriptors=(Field, FieldInfo))
 class BaseModelMetaclass(ModelMetaclass):
     def __new__(cls, name, bases, namespace: DictStrAny, **kwds):
         meta = BaseMeta
@@ -121,15 +127,32 @@ def exclude_undefined_values(v: T) -> T:
     return v
 
 
+def json_dumps(v, *, default, exclude_undefined=True):
+    if exclude_undefined:
+        v = exclude_undefined_values(v)
+
+    return orjson.dumps(v, default=default).decode()
+
+
 class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclass):
     if TYPE_CHECKING:
-        __triggers__: Dict[Type[BaseModel[ModelIdType]], Dict[Type[trigger], list[trigger]]]
+        __triggers__: dict[Type[BaseModel[ModelIdType]], dict[Type[trigger], list[trigger]]]
         __meta__: Type[BaseMeta]
+        __registry__: list[Type[BaseModel[ModelIdType]]]
 
-    __triggers__ = defaultdict(lambda: defaultdict(list))
-    __registry__: list[Type[BaseModel[ModelIdType]]] = []
-    _refs = defaultdict(lambda: defaultdict(set))
-    _olds: DictStrAny = PrivateAttr({})
+        _olds: DictStrAny
+
+    else:
+        __triggers__: ClassVar[
+            dict[
+                Type[BaseModel[ModelIdType]],
+                dict[Type[trigger], list[trigger]]
+            ]
+        ] = defaultdict(lambda: defaultdict(list))  # yapf: disable
+        __registry__: ClassVar[
+            list[Type[BaseModel[ModelIdType]]]
+        ] = []  # yapf: disable
+        _olds = PrivateAttr({})
 
     id: Undefined[ModelIdType] = undefined
 
@@ -149,6 +172,7 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
     class Config:
         validate_assignment = True
         fields = {'id': '_id'}
+        json_dumps = json_dumps
 
     @property
     def is_created(self) -> bool:
@@ -163,6 +187,10 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
             values = exclude_undefined_values(values)
 
         return values
+
+    def json(self, **kwargs: Any) -> str:
+        kwargs.setdefault('exclude_undefined', True)
+        return super().json(**kwargs)
 
     def _dump(self) -> DictStrAny:
         return self.dict(
