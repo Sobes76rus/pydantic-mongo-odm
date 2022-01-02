@@ -13,6 +13,7 @@ from motor.core import AgnosticCursor
 from motor.docstrings import *
 from motor.metaprogramming import ReadOnlyProperty
 from motor.metaprogramming import coroutine_annotation
+
 """GridFS implementation for Motor, an asynchronous driver for MongoDB."""
 
 

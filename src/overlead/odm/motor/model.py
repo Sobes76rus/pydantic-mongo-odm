@@ -209,19 +209,20 @@ class MotorModel(BaseModel[T], Generic[T]):
             return wrapt
 
         for trig in self.get_triggers(type):
-
             if not asyncio.iscoroutinefunction(trig.func):
                 trig.func = wrapper(trig.func)
 
             gen = trig.exec(self, **kwargs)
-            for val in gen:
-                while asyncio.iscoroutine(val):
-                    val = await val
+            val = None
 
-                try:
-                    gen.send(val)
-                except StopIteration:
-                    pass
+            try:
+                while True:
+                    val = gen.send(val)
+                    while asyncio.iscoroutine(val):
+                        val = await val
+
+            except StopIteration:
+                pass
 
     @classmethod
     async def upload_file(

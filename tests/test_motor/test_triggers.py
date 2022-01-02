@@ -2,6 +2,8 @@ import pytest
 
 from overlead.odm import triggers
 from overlead.odm.motor.model import ObjectIdModel
+from overlead.odm.types import Undefined
+from overlead.odm.types import undefined
 
 pytestmark = pytest.mark.asyncio
 
@@ -179,3 +181,23 @@ async def test_validator():
     assert doc.validator == 1
     await doc.save()
     assert doc.validator == 2
+
+
+async def test_vlaidator2():
+    class Model(ObjectIdModel):
+        a: Undefined[bool] = undefined
+        b: Undefined[bool] = undefined
+
+        class Meta:
+            collection_name = 'TestModel'
+
+        @triggers.validator('a', 'b')
+        async def check_a(self, v):
+            return not v if v is not undefined else undefined
+
+    model = await Model().save()
+    assert model.a == undefined
+    model = await Model(a=True).save()
+    assert model.a == False
+    model = await Model(a=False).save()
+    assert model.a == True
