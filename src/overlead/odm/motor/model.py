@@ -224,10 +224,11 @@ class MotorModel(BaseModel[T], Generic[T]):
                     pass
 
     @classmethod
-    async def create_file(
+    async def upload_file(
         cls,
         filename: str,
         data: Undefined[Optional[Union[str, bytes, IO[Any]]]],
+        metadata: dict[str, Any] = None,
         id: Any = None,
     ) -> Optional[Undefined[ObjectId]]:
         if data is None:
@@ -236,9 +237,11 @@ class MotorModel(BaseModel[T], Generic[T]):
         if data is undefined:
             return undefined
 
+        if isinstance(data, str):
+            data = data.encode()
+
         id = id or ObjectId()
-        stream = cls.gridfs.open_upload_stream_with_id(id, filename)
-        await stream.write(data)
+        await cls.gridfs.upload_from_stream_with_id(id, filename, data, metadata=metadata)
         return id
 
 

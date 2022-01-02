@@ -237,7 +237,16 @@ class AgnosticGridFSBucket:
 
     rename = ...
     upload_from_stream = ...
-    upload_from_stream_with_id = ...
+
+    def upload_from_stream_with_id(
+        self,
+        file_id: Any,
+        filename: str,
+        source: Union[str, bytes, IO[Any]],
+        chunk_size_bytes: Optional[int] = ...,
+        metadata: dict[str, Any] = ...,
+    ) -> Awaitable[Any]:
+        ...
 
     def __init__(self,
                  database,

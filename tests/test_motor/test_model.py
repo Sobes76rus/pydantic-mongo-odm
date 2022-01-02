@@ -60,3 +60,10 @@ def test_model_objectid_ok_id_assign(value):
 
 def test_schema():
     assert bool(ModelObjectId.schema()) == True
+
+
+async def test_upload_file():
+    data = 'ololo trololo'
+    id = await ModelObjectId.upload_file('file', data)
+    file = await ModelObjectId.gridfs.open_download_stream(id)
+    assert await file.read() == data.encode()
