@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import typing
 from typing import Any
 from typing import Generic
@@ -13,18 +14,20 @@ from pydantic import ValidationError
 from pydantic.fields import ModelField
 from pydantic.json import ENCODERS_BY_TYPE
 
+from overlead.odm.fields.objectid_field import ObjectId
+
 __all__ = ['Undefined', 'undefined']
 
 UndefinedType = TypeVar('UndefinedType')
 Und = TypeVar('Und', bound='UndefinedClass')
 
 
-class UndefinedClass(Generic[UndefinedType]):
-    singleton: Optional[UndefinedClass[UndefinedType]] = None
+class UndefinedClass:
+    singleton: Optional[UndefinedClass] = None
 
-    def __new__(cls: Type[Und], *args: Any) -> Und[UndefinedType]:
+    def __new__(cls: Type[Und], *args: Any) -> Und:
         if not cls.singleton:
-            singleton: UndefinedClass[UndefinedType] = super().__new__(cls, *args)
+            singleton: Und = super().__new__(cls, *args)
             cls.singleton = singleton
 
         return cls.singleton
@@ -42,36 +45,28 @@ class UndefinedClass(Generic[UndefinedType]):
     @classmethod
     def validate(
         cls,
-        v: Undefined[UndefinedType],
-        values: dict[str, Any],
-        field: ModelField,
-    ) -> Undefined[UndefinedType]:
-        if not field.sub_fields:
-            raise TypeError('required')
-
+        v: Any,
+    ) -> UndefinedClass:
         if v is undefined:
             return undefined
 
-        v, e = field.sub_fields[0].validate(v, values, loc='')
+        raise ValueError(f'{v} is not undefined')
 
-        if e:
-            raise ValidationError([e], cls)
-        else:
-            return v
-
-
-class UndefinedStr(UndefinedClass[UndefinedType], Generic[UndefinedType]):
     @classmethod
-    def validate(
-        cls,
-        v: Union[Undefined[UndefinedType], Literal['undefined']],
-        values: dict[str, Any],
-        field: ModelField,
-    ) -> Undefined[UndefinedType]:
+    def __modify_schema__(self, field_schema):
+        field_schema.update(
+            type='string',
+            examples=["undefined"],
+        )
+
+
+class UndefinedStrClass(UndefinedClass):
+    @classmethod
+    def validate(cls, v) -> UndefinedClass:
         if v == 'undefined':
             return undefined
 
-        return super().validate(v, values, field)
+        return super().validate(v)
 
 
 class Error:
@@ -84,8 +79,14 @@ class Error:
         raise ValueError(v)
 
 
-ENCODERS_BY_TYPE[UndefinedClass] = str
-ENCODERS_BY_TYPE[UndefinedStr] = str
+undefined = UndefinedClass()
+Undefined = Union[UndefinedClass, UndefinedType]
+UndefinedStr = Union[UndefinedStrClass, UndefinedClass, UndefinedType]
 
-Undefined = Union[UndefinedClass[UndefinedType], UndefinedType]
-undefined = UndefinedStr[Any]()
+# undefined = UndefinedClassEnum.undefined
+
+# assert UndefinedClassEnum[undefined.name] == undefined
+# assert UndefinedClassEnum(undefined.value) == undefined
+# Undefined = Union[Literal[UndefinedClassEnum], UndefinedType]
+
+__all__ = ['Undefined', 'UndefinedStr', 'undefined', 'Error']

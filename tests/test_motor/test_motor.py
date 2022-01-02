@@ -4,8 +4,6 @@ import pytest
 
 from overlead.odm.motor.model import ObjectIdModel
 
-pytestmark = pytest.mark.asyncio
-
 
 class Motor(ObjectIdModel):
     value: int
@@ -13,6 +11,11 @@ class Motor(ObjectIdModel):
     class Meta:
         collection_name = 'motor'
         indexes = ('value', {'value': 'hashed'}, ('-value', {'unique': True}), ['_id', 'value'])
+
+
+@pytest.fixture(autouse=True, scope='module')
+async def create_collection():
+    await Motor.database.create_collection(Motor.collection_name)
 
 
 async def test_ensure_indexes():

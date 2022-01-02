@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable
+from typing import IO
 from typing import Any
 from typing import Dict
 from typing import Generic
@@ -30,6 +31,7 @@ from overlead.odm.fields import ObjectId
 from overlead.odm.model import BaseModel
 from overlead.odm.triggers import trigger
 from overlead.odm.types import Undefined
+from overlead.odm.types import UndefinedType
 from overlead.odm.types import undefined
 
 from .cursor import MotorCursor
@@ -220,6 +222,24 @@ class MotorModel(BaseModel[T], Generic[T]):
                     gen.send(val)
                 except StopIteration:
                     pass
+
+    @classmethod
+    async def create_file(
+        cls,
+        filename: str,
+        data: Undefined[Optional[Union[str, bytes, IO[Any]]]],
+        id: Any = None,
+    ) -> Optional[Undefined[ObjectId]]:
+        if data is None:
+            return data
+
+        if data is undefined:
+            return undefined
+
+        id = id or ObjectId()
+        stream = cls.gridfs.open_upload_stream_with_id(id, filename)
+        await stream.write(data)
+        return id
 
 
 class ObjectIdModel(MotorModel[ObjectId]):

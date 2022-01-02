@@ -8,13 +8,17 @@ from pydantic.utils import lenient_issubclass
 from overlead.odm.fields import ObjectId
 from overlead.odm.fields import Reference
 from overlead.odm.types import UndefinedClass
+from overlead.odm.types import UndefinedStrClass
 
 ENCODERS_BY_TYPE[BSONObjectId] = str
 ENCODERS_BY_TYPE[ObjectId] = str
 ENCODERS_BY_TYPE[Reference] = str
 
-SCALAR_TYPES: list[type] = [Reference]
-SCALAR_GENERIC_TYPES: list[type] = [UndefinedClass]
+ENCODERS_BY_TYPE[UndefinedClass] = str
+ENCODERS_BY_TYPE[UndefinedStrClass] = str
+
+SCALAR_TYPES: list[type] = [Reference, UndefinedClass]
+SCALAR_GENERIC_TYPES: list[type] = []
 
 try:
     import fastapi

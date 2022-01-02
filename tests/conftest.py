@@ -1,10 +1,17 @@
 import asyncio
+import inspect
 
 import pytest
 from testcontainers.compose import DockerCompose
 
 from overlead.odm.client import get_client
 from overlead.odm.motor.model import ObjectIdModel
+
+
+def pytest_collection_modifyitems(session, config, items):
+    for item in items:
+        if isinstance(item, pytest.Function) and inspect.iscoroutinefunction(item.function):
+            item.add_marker(pytest.mark.asyncio)
 
 
 @pytest.fixture(autouse=True, scope='session')

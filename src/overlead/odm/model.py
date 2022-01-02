@@ -171,6 +171,7 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
 
     class Config:
         validate_assignment = True
+        validate_all = True
         fields = {'id': '_id'}
         json_dumps = json_dumps
 
