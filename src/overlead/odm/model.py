@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import pickle
 from collections import defaultdict
 from typing import TYPE_CHECKING
 from typing import Any
@@ -13,6 +14,12 @@ from typing import Type
 from typing import TypeVar
 
 import orjson
+from bson.binary import USER_DEFINED_SUBTYPE
+from bson.binary import Binary
+from bson.codec_options import CodecOptions
+from bson.codec_options import TypeCodec
+from bson.codec_options import TypeDecoder
+from bson.codec_options import TypeRegistry
 from motor.core import AgnosticClient
 from motor.motor_asyncio import AsyncIOMotorClient
 from motor.motor_asyncio import AsyncIOMotorCollection
@@ -71,6 +78,15 @@ def inherit_meta(self_meta: 'MetaType', parent_meta: 'MetaType', **namespace: An
         *getattr(self_meta, 'triggers', []),
     ))
 
+    codecs = getattr(self_meta, 'type_codecs', [])
+    if not isinstance(codecs, (tuple, list)):
+        raise TypeError(f'{triggers=}')
+
+    namespace['type_codecs'] = tuple(codec for codec in (
+        *getattr(parent_meta, 'type_codecs', []),
+        *getattr(self_meta, 'type_codecs', []),
+    ))
+
     return type('Meta', base_classes, namespace)
 
 
@@ -80,6 +96,7 @@ class BaseMeta:
     database_name: Optional[str] = None
     collection_name: Optional[str] = None
     triggers: tuple[trigger, ...] = ()
+    type_codecs: tuple[TypeCodec, ...] = ()
 
 
 @__dataclass_transform__(kw_only_default=True, field_descriptors=(Field, FieldInfo))
@@ -103,6 +120,12 @@ class BaseModelMetaclass(ModelMetaclass):
 
         namespace['__meta__'] = meta
 
+        if namespace.get('Config'):
+            setattr(namespace.get('Config'), 'gridfs', lambda: new.gridfs)
+        else:
+            new_type = type('Config', (type, ), {'gridfs': lambda: new.gridfs})
+            namespace['Config'] = new_type
+
         new = super().__new__(cls, name, bases, namespace, **kwds)
 
         if _is_base_document_class_defined:
@@ -116,15 +139,23 @@ class BaseModelMetaclass(ModelMetaclass):
 _is_base_document_class_defined = False
 
 
-def exclude_undefined_values(v: T) -> T:
+def exclude_values(v: T, value) -> T:
     if isinstance(v, dict):
-        return {k: exclude_undefined_values(v) for k, v in v.items() if v is not undefined}  # type: ignore
+        return {k: exclude_values(v, value) for k, v in v.items() if v != value}  # type: ignore
 
     if sequence_like(v):
-        seq = (exclude_undefined_values(val) for val in v if val is not undefined)  # type: ignore
+        seq = (exclude_values(val, value) for val in v if val != value)  # type: ignore
         return v.__class__(*seq) if is_namedtuple(v.__class__) else v.__class__(seq)
 
     return v
+
+
+def exclude_undefined_values(v: T) -> T:
+    return exclude_values(v, undefined)
+
+
+def exclude_none_values(v: T) -> T:
+    return exclude_values(v, None)
 
 
 def json_dumps(v, *, default, exclude_undefined=True):
@@ -132,6 +163,19 @@ def json_dumps(v, *, default, exclude_undefined=True):
         v = exclude_undefined_values(v)
 
     return orjson.dumps(v, default=default).decode()
+
+
+def fallback_pickle_encoder(value):
+    return Binary(pickle.dumps(value), USER_DEFINED_SUBTYPE)
+
+
+class PickledBinaryDecoder(TypeDecoder):
+    bson_type = Binary
+
+    def transform_bson(self, value: Any) -> Any:
+        if value.subtype == USER_DEFINED_SUBTYPE:
+            return pickle.loads(value)
+        return value
 
 
 class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclass):
@@ -168,6 +212,7 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
 
     class Meta:
         indexes = ('_id', )
+        type_codecs = (PickledBinaryDecoder(), )
 
     class Config:
         validate_assignment = True
@@ -219,6 +264,16 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         collection_name: str
         database_name: str
 
+        @classmethod
+        @property
+        def _codec_options(cls) -> CodecOptions:
+            ...
+
+        @classmethod
+        @property
+        def _type_registry(cls) -> TypeRegistry:
+            ...
+
     else:
 
         @classmethod
@@ -262,12 +317,25 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         @classmethod
         @property
         def collection(cls) -> AsyncIOMotorCollection:
-            return cls.database.get_collection(cls.collection_name)
+            return cls.database.get_collection(cls.collection_name, codec_options=cls._codec_options)
 
         @classmethod
         @property
         def gridfs(cls) -> AsyncIOMotorGridFSBucket:
             return AsyncIOMotorGridFSBucket(cls.database)
+
+        @classmethod
+        @property
+        def _codec_options(cls) -> CodecOptions:
+            return CodecOptions(type_registry=cls._type_registry)
+
+        @classmethod
+        @property
+        def _type_registry(cls) -> TypeRegistry:
+            return TypeRegistry(
+                type_codecs=cls.__meta__.type_codecs,
+                fallback_encoder=fallback_pickle_encoder,
+            )
 
     @classmethod
     def get_triggers(cls, type: Type[trigger]) -> list[trigger]:
