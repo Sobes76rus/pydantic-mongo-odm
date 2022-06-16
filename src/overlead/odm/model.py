@@ -126,6 +126,8 @@ class BaseModelMetaclass(ModelMetaclass):
             new_type = type('Config', (type, ), {'gridfs': lambda: new.gridfs})
             namespace['Config'] = new_type
 
+        namespace['__classes__'] = []
+
         new = super().__new__(cls, name, bases, namespace, **kwds)
 
         if _is_base_document_class_defined:
@@ -180,11 +182,12 @@ class PickledBinaryDecoder(TypeDecoder):
 
 class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclass):
     if TYPE_CHECKING:
-        __triggers__: dict[Type[BaseModel[ModelIdType]], dict[Type[trigger], list[trigger]]]
-        __meta__: Type[BaseMeta]
-        __registry__: list[Type[BaseModel[ModelIdType]]]
+        __triggers__: ClassVar[dict[Type[BaseModel[ModelIdType]], dict[Type[trigger], list[trigger]]]]
+        __meta__: ClassVar[Type[BaseMeta]]
+        __registry__: ClassVar[list[Type[BaseModel[ModelIdType]]]]
+        __classes__: ClassVar[list[str]]
 
-        _olds: DictStrAny
+        _olds: DictStrAny = PrivateAttr({})
 
     else:
         __triggers__: ClassVar[
@@ -196,6 +199,7 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         __registry__: ClassVar[
             list[Type[BaseModel[ModelIdType]]]
         ] = []  # yapf: disable
+        __classes__: ClassVar[list[str]] = []
         _olds = PrivateAttr({})
 
     id: Undefined[ModelIdType] = undefined
@@ -209,6 +213,13 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
             for base in bases:
                 if issubclass(base, trigger):
                     cls.__triggers__[cls][base].append(trig)
+
+        if cls.__meta__.collection_name:
+            coll_name = cls.__meta__.collection_name
+            for klass in cls.__registry__:
+                if klass.__meta__.collection_name == coll_name:
+                    if issubclass(cls, klass):
+                        klass.__classes__.append(cls.__name__)
 
     class Meta:
         indexes = ('_id', )
@@ -255,87 +266,66 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         doc._olds = data
         return doc
 
-    if TYPE_CHECKING:
-        client: AsyncIOMotorClient
-        database: AsyncIOMotorDatabase
-        collection: AsyncIOMotorCollection
-        gridfs: AsyncIOMotorGridFSBucket
+    @classmethod
+    @property
+    def client(cls) -> AsyncIOMotorClient:
+        if not cls.__meta__.client:
+            raise ValueError('client required')
 
-        collection_name: str
-        database_name: str
+        if not isinstance(cls.__meta__.client, AsyncIOMotorClient):
+            raise TypeError('AsyncIOMotorClient is required')
 
-        @classmethod
-        @property
-        def _codec_options(cls) -> CodecOptions:
-            ...
+        return cls.__meta__.client
 
-        @classmethod
-        @property
-        def _type_registry(cls) -> TypeRegistry:
-            ...
+    @classmethod
+    @property
+    def database_name(cls) -> str:
+        if not cls.__meta__.database_name:
+            raise ValueError('database name is required')
 
-    else:
+        if not isinstance(cls.__meta__.database_name, str):
+            raise TypeError('str required')
 
-        @classmethod
-        @property
-        def client(cls) -> AsyncIOMotorClient:
-            if not cls.__meta__.client:
-                raise ValueError('client required')
+        return cls.__meta__.database_name
 
-            if not isinstance(cls.__meta__.client, AsyncIOMotorClient):
-                raise TypeError('AsyncIOMotorClient is required')
+    @classmethod
+    @property
+    def collection_name(cls) -> str:
+        if not cls.__meta__.collection_name:
+            raise ValueError('collection name required')
 
-            return cls.__meta__.client
+        if not isinstance(cls.__meta__.collection_name, str):
+            raise TypeError('str required')
 
-        @classmethod
-        @property
-        def database_name(cls) -> str:
-            if not cls.__meta__.database_name:
-                raise ValueError('database name is required')
+        return cls.__meta__.collection_name
 
-            if not isinstance(cls.__meta__.database_name, str):
-                raise TypeError('str required')
+    @classmethod
+    @property
+    def database(cls) -> AsyncIOMotorDatabase:
+        return cls.client.get_database(cls.database_name)
 
-            return cls.__meta__.database_name
+    @classmethod
+    @property
+    def collection(cls) -> AsyncIOMotorCollection:
+        return cls.database.get_collection(cls.collection_name, codec_options=cls._codec_options)
 
-        @classmethod
-        @property
-        def collection_name(cls) -> str:
-            if not cls.__meta__.collection_name:
-                raise ValueError('collection name required')
+    @classmethod
+    @property
+    def gridfs(cls) -> AsyncIOMotorGridFSBucket:
+        return AsyncIOMotorGridFSBucket(cls.database)
 
-            if not isinstance(cls.__meta__.collection_name, str):
-                raise TypeError('str required')
+    @classmethod
+    @property
+    def _codec_options(cls) -> CodecOptions:
+        return CodecOptions(type_registry=cls._type_registry)
 
-            return cls.__meta__.collection_name
-
-        @classmethod
-        @property
-        def database(cls) -> AsyncIOMotorDatabase:
-            return cls.client.get_database(cls.database_name)
-
-        @classmethod
-        @property
-        def collection(cls) -> AsyncIOMotorCollection:
-            return cls.database.get_collection(cls.collection_name, codec_options=cls._codec_options)
-
-        @classmethod
-        @property
-        def gridfs(cls) -> AsyncIOMotorGridFSBucket:
-            return AsyncIOMotorGridFSBucket(cls.database)
-
-        @classmethod
-        @property
-        def _codec_options(cls) -> CodecOptions:
-            return CodecOptions(type_registry=cls._type_registry)
-
-        @classmethod
-        @property
-        def _type_registry(cls) -> TypeRegistry:
-            return TypeRegistry(
-                type_codecs=cls.__meta__.type_codecs,
-                fallback_encoder=fallback_pickle_encoder,
-            )
+    @classmethod
+    @property
+    def _type_registry(cls) -> TypeRegistry:
+        return TypeRegistry(
+            type_codecs=cls.__meta__.type_codecs,
+            fallback_encoder=fallback_pickle_encoder,
+        )
 
     @classmethod
     def get_triggers(cls, type: Type[trigger]) -> list[trigger]:

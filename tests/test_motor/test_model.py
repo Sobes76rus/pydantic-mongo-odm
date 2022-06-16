@@ -52,7 +52,7 @@ def test_model_objectid_ok_id(value):
     [ObjectId(), undefined, str(ObjectId())],
 )
 def test_model_objectid_ok_id_assign(value):
-    a = ModelObjectId(_id=ObjectId())
+    a = ModelObjectId(id=ObjectId())
     assert a.id != ObjectId(value) if value is not undefined else value
     a.id = value
     assert a.id == ObjectId(value) if value is not undefined else value
