@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "overlead-odm"
-version = "0.2.0"
+version = "0.3.0"
 description = ""
 authors = ["Your Name <you@example.com>"]
 packages = [
@@ -10,7 +10,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "^3.9"
-pydantic = "^1.9.1"
+pydantic = "^1.10.0"
 pymongo = "^3.11.4"
 motor = "^2.4.0"
 orjson = "^3.5.3"
