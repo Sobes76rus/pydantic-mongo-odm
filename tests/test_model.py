@@ -6,10 +6,14 @@ import pytest
 from motor.motor_asyncio import AsyncIOMotorClient
 from motor.motor_asyncio import AsyncIOMotorCollection
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import AnyHttpUrl
+from pydantic import BaseModel as PydanticModel
 from pymongo import MongoClient
 
 from overlead.odm.client import get_client
 from overlead.odm.model import BaseModel
+from overlead.odm.types import Undefined
+from overlead.odm.types import undefined
 
 
 class ModelTest(BaseModel[Any]):
@@ -105,9 +109,22 @@ def test_client_wrong_collection_name(value, type_, msg):
 
 
 @pytest.mark.parametrize('value', ['123', '321', 'required', 'str.required'])
-def test_client_corrent_collection_name(value):
+def test_client_correct_collection_name(value):
     class TestModel(BaseModel):
         class Meta:
             collection_name = value
 
     assert TestModel.collection_name == value
+
+
+def test_any_http_url_with_undefined():
+    class A(BaseModel):
+        u: Undefined[AnyHttpUrl] = undefined
+
+    class Form(PydanticModel):
+        u: Optional[AnyHttpUrl]
+
+    a = A(u='http://overlead.me')
+    f = Form(u='http://overlead.me')
+    assert type(f.u) == AnyHttpUrl
+    A.u = f.u

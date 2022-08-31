@@ -30,9 +30,9 @@ from pydantic.fields import Field
 from pydantic.fields import FieldInfo
 from pydantic.generics import GenericModel as PydanticModel
 from pydantic.main import ModelMetaclass
-from pydantic.main import __dataclass_transform__
 from pydantic.typing import is_namedtuple
 from pydantic.utils import sequence_like
+from typing_extensions import dataclass_transform
 
 from overlead.odm.triggers import trigger
 from overlead.odm.types import Undefined
@@ -99,7 +99,7 @@ class BaseMeta:
     type_codecs: tuple[TypeCodec, ...] = ()
 
 
-@__dataclass_transform__(kw_only_default=True, field_descriptors=(Field, FieldInfo))
+@dataclass_transform(kw_only_default=True, field_descriptors=(Field, FieldInfo))
 class BaseModelMetaclass(ModelMetaclass):
     def __new__(cls, name, bases, namespace: DictStrAny, **kwds):
         meta = BaseMeta
