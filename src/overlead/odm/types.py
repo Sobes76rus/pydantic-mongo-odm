@@ -42,6 +42,9 @@ class UndefinedClass:
     def __str__(self):
         return 'undefined'
 
+    def __bool__(self):
+        return False
+
     @classmethod
     def validate(
         cls,
