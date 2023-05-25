@@ -10,9 +10,10 @@ publish-package:
     - poetry config repositories.gitlab https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/pypi
     - poetry config http-basic.gitlab gitlab-ci-token ${CI_JOB_TOKEN}
     # - bash ${POETRY_BUILD_LOCK}
-    - poetry publish -r gitlab
+    - poetry publish -r gitlab --build
   only:
     refs:
       - master
     changes:
       - pyproject.toml
+      - .gitlab-ci.yml
