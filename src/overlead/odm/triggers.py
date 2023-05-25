@@ -1,64 +1,69 @@
-from typing import Any
-from typing import Optional
+from collections.abc import Awaitable, Callable, Generator
+from typing import Concatenate, Generic, ParamSpec, Self, TypeAlias, TypeVar
 
+from mypy_extensions import Arg
 from pydantic import BaseModel
-from pydantic import ValidationError
-from pydantic.error_wrappers import ErrorWrapper
+
+P = ParamSpec("P")
+C = TypeVar("C")
+A = TypeVar("A", bound=BaseModel)
+R_co = TypeVar("R_co", covariant=True)
+MbAwaitable: TypeAlias = Awaitable[C] | C
 
 
-class trigger():
-    def __init__(self, reference_field: Optional[str] = None):
+class trigger(Generic[A, P, R_co]):  # noqa: N801
+    """base trigger class."""
+
+    def __init__(self, reference_field: str | None = None) -> None:
         self.reference = reference_field
 
-    def __call__(self, func):
+    def __call__(
+        self,
+        func: Callable[Concatenate[A, P], MbAwaitable[R_co]]
+        | Callable[P, MbAwaitable[R_co]],
+    ) -> Self:
+        """Set trigger callback function."""
         self.func = func
         return self
 
-    def exec(self, *args, **kwargs):
-        yield self.func(*args, **kwargs)
+    def _exec(
+        self,
+        instance: A,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> Generator[MbAwaitable[R_co], None, None]:
+        """Call callback."""
+        function = self.func.__get__(instance)
+        yield function(*args, **kwargs)
 
 
-class before_save(trigger):
-    pass
+class before_save(trigger[A, [], None]):  # noqa: N801
+    """trigger before method `save`."""
 
 
-class after_save(trigger):
-    pass
+class after_save(trigger[A, [Arg(bool, "created")], None]):  # noqa: N801
+    """trigger after method `save`."""
 
 
-class before_create(trigger):
-    pass
+class before_create(trigger[A, [], None]):  # noqa: N801
+    """trigger before method `save` if creating."""
 
 
-class after_create(trigger):
-    pass
+class after_create(trigger[A, [], None]):  # noqa: N801
+    """trigger after method `save` if created."""
 
 
-class before_update(trigger):
-    pass
+class before_update(trigger[A, [], None]):  # noqa: N801
+    """trigger before method `save` if updating."""
 
 
-class after_update(trigger):
-    pass
+class after_update(trigger[A, [], None]):  # noqa: N801
+    """trigger after method `save` if updated."""
 
 
-class before_delete(trigger):
-    pass
+class before_delete(trigger[A, [], None]):  # noqa: N801
+    """trigger before method `delete`."""
 
 
-class after_delete(trigger):
-    pass
-
-
-class validator(before_save):
-    def __init__(self, *fields: str):
-        super().__init__()
-        self.fields = fields
-
-    def exec(self, inst: BaseModel):
-        for field in self.fields:
-            try:
-                value: Any = yield self.func(inst, getattr(inst, field))
-                setattr(inst, field, value)
-            except (ValueError, TypeError, AssertionError) as exc:
-                raise ValidationError([ErrorWrapper(exc, field)], inst.__class__)
+class after_delete(trigger[A, [], None]):  # noqa: N801
+    """trigger after method `delete`."""

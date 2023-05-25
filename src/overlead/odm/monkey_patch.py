@@ -1,23 +1,24 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from bson import ObjectId as BSONObjectId
-from pydantic.fields import ModelField
 from pydantic.json import ENCODERS_BY_TYPE
 from pydantic.utils import lenient_issubclass
 
-from overlead.odm.fields import ObjectId
-from overlead.odm.fields import Reference
-from overlead.odm.types import UndefinedClass
-from overlead.odm.types import UndefinedStrClass
+from overlead.odm.fields import ObjectId, Reference
+from overlead.odm.types import UndefinedType
+
+if TYPE_CHECKING:
+    from pydantic.fields import ModelField
 
 ENCODERS_BY_TYPE[BSONObjectId] = str
 ENCODERS_BY_TYPE[ObjectId] = str
 ENCODERS_BY_TYPE[Reference] = str
+ENCODERS_BY_TYPE[UndefinedType] = str
 
-ENCODERS_BY_TYPE[UndefinedClass] = str
-ENCODERS_BY_TYPE[UndefinedStrClass] = str
 
-SCALAR_TYPES: list[type] = [Reference, UndefinedClass]
+SCALAR_TYPES: list[type] = [Reference, UndefinedType]
 SCALAR_GENERIC_TYPES: list[type] = []
 
 try:
@@ -26,13 +27,18 @@ try:
     import fastapi.params
 
     def is_scalar_field_patch(field: ModelField) -> bool:
-        if lenient_issubclass(field.type_, tuple(SCALAR_TYPES))\
-                and not isinstance(field.field_info, fastapi.params.Body):
+        """Check scalars."""
+        if lenient_issubclass(field.type_, tuple(SCALAR_TYPES)) and not isinstance(
+            field.field_info,
+            fastapi.params.Body,
+        ):
             return True
 
-        if lenient_issubclass(field.type_, tuple(SCALAR_GENERIC_TYPES))\
-                and not isinstance(field.field_info, fastapi.params.Body)\
-                and all(is_scalar_field_patch(f) for f in field.sub_fields):
+        if (
+            lenient_issubclass(field.type_, tuple(SCALAR_GENERIC_TYPES))
+            and not isinstance(field.field_info, fastapi.params.Body)
+            and all(is_scalar_field_patch(f) for f in field.sub_fields or [])
+        ):
             return True
 
         return is_scalar_field(field)

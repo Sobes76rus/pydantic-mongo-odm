@@ -1,74 +1,59 @@
+from typing import Any
+
 import pytest
-from pydantic.error_wrappers import ValidationError
+from pydantic import validate_arguments
 
 from overlead.odm.fields import ObjectId
-from overlead.odm.fields import Reference
-from overlead.odm.model import BaseModel
-from overlead.odm.motor.model import ObjectIdModel
-from overlead.odm.types import Undefined
-from overlead.odm.types import UndefinedStr
-from overlead.odm.types import undefined
+from overlead.odm.types import Undefined, UndefinedType, undefined
 
 
-def test():
-    class B(ObjectIdModel):
-        pass
-
-    class A(BaseModel):
-        s: Undefined[str] = undefined
-        o: Undefined[ObjectId] = undefined
-        r: Undefined[Reference[B]] = undefined
-        l: Undefined[list[int]] = undefined
-        u: UndefinedStr[str] = undefined
-
-    oid = ObjectId()
-
-    assert A(s='123').s == '123'
-    assert A(o=oid).o == oid
-    assert A(r=oid).r == oid
-    assert A(l=[1, 2, 3]).l == [1, 2, 3]
-
-    with pytest.raises(ValidationError) as exc:
-        A(r=123)
-
-    assert 'invalid objectid' in str(exc.value)
-    assert '(type=type_error)' in str(exc.value)
-
-    with pytest.raises(ValidationError) as exc:
-        A(s=ObjectId())
-
-    assert '(type=type_error.str)' in str(exc.value)
+def test_repr() -> None:
+    assert repr(undefined) == "OverleadUndefined"
 
 
-def test2():
-    class A(BaseModel):
-        a: Undefined[str] = '123'
-
-    assert A().a == '123'
-    assert A(a='321').a == '321'
-    assert A(a='undefined').a == 'undefined'
-    assert type(A(a='undefined').a) == str
-    assert A(a=123).a == '123'
-    assert A(a=undefined).a == undefined
-    assert type(A(a=undefined).a) != str
-    assert not isinstance(undefined, str)
-
-    with pytest.raises(ValidationError):
-        A(a=ObjectId())
+def test_str() -> None:
+    assert str(undefined) == "OverleadUndefined"
 
 
-def test3():
-    class A(BaseModel):
-        a: UndefinedStr[str] = 'undefined'
+@pytest.mark.parametrize(
+    "value",
+    [
+        "undefined",
+        "123",
+        object,
+        None,
+        object(),
+        ObjectId(),
+        1,
+        2,
+        3,
+        int,
+        UndefinedType,
+    ],
+)
+def test_validator(value: Any) -> None:
+    @validate_arguments()
+    def validate(val: Undefined[Any]) -> bool:
+        assert val != undefined
+        assert val == value
+        return True
 
-    assert A().a == undefined
-    assert A(a='123').a == '123'
-    assert A(a='undefined').a == undefined
+    assert validate(value)
 
 
-def test4():
-    class A(BaseModel):
-        a: UndefinedStr[str] = ObjectId()
+@pytest.mark.parametrize(
+    "value",
+    [
+        "undefined",
+        "123",
+        3,
+    ],
+)
+def test_validator_str(value: Any) -> None:
+    @validate_arguments()
+    def validate(val: Undefined[str]) -> bool:
+        assert val != undefined
+        assert val == str(value)
+        return True
 
-    with pytest.raises(ValidationError):
-        A()
+    assert validate(value)

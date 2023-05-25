@@ -1,259 +1,157 @@
 from __future__ import annotations
 
-import inspect
-import pickle
-from collections import defaultdict
-from typing import TYPE_CHECKING
-from typing import Any
-from typing import ClassVar
-from typing import Dict
-from typing import Generic
-from typing import Optional
-from typing import Tuple
-from typing import Type
-from typing import TypeVar
+from collections.abc import Mapping  # noqa: TCH003
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Generic,
+    ParamSpec,
+    Self,
+    TypeVar,
+)
 
 import orjson
-from bson.binary import USER_DEFINED_SUBTYPE
-from bson.binary import Binary
-from bson.codec_options import CodecOptions
-from bson.codec_options import TypeCodec
-from bson.codec_options import TypeDecoder
-from bson.codec_options import TypeRegistry
-from motor.core import AgnosticClient
-from motor.motor_asyncio import AsyncIOMotorClient
-from motor.motor_asyncio import AsyncIOMotorCollection
-from motor.motor_asyncio import AsyncIOMotorDatabase
-from motor.motor_asyncio import AsyncIOMotorGridFSBucket
-from pydantic import PrivateAttr
-from pydantic.fields import Field
-from pydantic.fields import FieldInfo
+from bson.codec_options import CodecOptions, TypeRegistry
+from motor.motor_asyncio import (
+    AsyncIOMotorClient,
+    AsyncIOMotorCollection,
+    AsyncIOMotorDatabase,
+)
+from pydantic.fields import PrivateAttr
 from pydantic.generics import GenericModel as PydanticModel
-from pydantic.main import ModelMetaclass
-from pydantic.typing import is_namedtuple
-from pydantic.utils import sequence_like
-from typing_extensions import dataclass_transform
 
-from overlead.odm.triggers import trigger
-from overlead.odm.types import Undefined
-from overlead.odm.types import undefined
-
-from .index import Index
+from overlead.odm.errors import (
+    ModelClientError,
+    ModelCollectionNameError,
+    ModelDatabaseNameError,
+)
+from overlead.odm.metamodel import BaseModelMetaclass
+from overlead.odm.types import Undefined, classproperty, undefined
+from overlead.odm.utils import (
+    PickledBinaryDecoder,
+    exclude_undefined_values,
+    fallback_pickle_encoder,
+    json_dumps,
+)
 
 if TYPE_CHECKING:
-    MetaType = Type['BaseMeta']
+    from collections.abc import Callable, Generator
 
-DictStrAny = dict[str, Any]
-ModelIdType = TypeVar('ModelIdType')
-T = TypeVar('T')
-M = TypeVar('M', bound='BaseModel')
+    from pydantic.typing import AbstractSetIntStr, MappingIntStrAny
 
+    from overlead.odm.triggers import trigger
 
-def inherit_meta(self_meta: 'MetaType', parent_meta: 'MetaType', **namespace: Any) -> 'MetaType':
-    if not self_meta:
-        base_classes: Tuple['MetaType', ...] = (parent_meta, )
+_ModelIdType = TypeVar("_ModelIdType", covariant=True)
 
-    elif self_meta == parent_meta:
-        base_classes = (self_meta, )
-
-    else:
-        base_classes = self_meta, parent_meta
-
-    indexes = getattr(self_meta, 'indexes', [])
-    if not isinstance(indexes, (tuple, list)):
-        raise TypeError(f'indexes: {indexes}')
-
-    namespace['indexes'] = tuple(
-        Index.parse_obj(o) for o in (
-            *getattr(parent_meta, 'indexes', []),
-            *getattr(self_meta, 'indexes', []),
-        ))
-
-    triggers = getattr(self_meta, 'triggers', [])
-    if not isinstance(triggers, (tuple, list)):
-        raise TypeError(f'{triggers=}')
-
-    namespace['triggers'] = tuple(trig for trig in (
-        *getattr(parent_meta, 'triggers', []),
-        *getattr(self_meta, 'triggers', []),
-    ))
-
-    codecs = getattr(self_meta, 'type_codecs', [])
-    if not isinstance(codecs, (tuple, list)):
-        raise TypeError(f'{triggers=}')
-
-    namespace['type_codecs'] = tuple(codec for codec in (
-        *getattr(parent_meta, 'type_codecs', []),
-        *getattr(self_meta, 'type_codecs', []),
-    ))
-
-    return type('Meta', base_classes, namespace)
+T = TypeVar("T", bound=PydanticModel)
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
-class BaseMeta:
-    indexes: tuple[Index, ...] = ()
-    client: Optional[AgnosticClient] = None
-    database_name: Optional[str] = None
-    collection_name: Optional[str] = None
-    triggers: tuple[trigger, ...] = ()
-    type_codecs: tuple[TypeCodec, ...] = ()
+class BaseModel(PydanticModel, Generic[_ModelIdType], metaclass=BaseModelMetaclass):
+    """Base model for collections."""
 
+    _olds: Mapping[str, Any] = PrivateAttr({})
+    id: Undefined[_ModelIdType] = undefined
 
-@dataclass_transform(kw_only_default=True, field_descriptors=(Field, FieldInfo))
-class BaseModelMetaclass(ModelMetaclass):
-    def __new__(cls, name, bases, namespace: DictStrAny, **kwds):
-        meta = BaseMeta
-
-        for base in reversed(bases):
-            if _is_base_document_class_defined and issubclass(base, BaseModel):
-                meta = inherit_meta(base.__meta__, meta)
-
-        meta_from_namespace = namespace.get('Meta')
-        meta = inherit_meta(meta_from_namespace, meta)
-
-        triggers = list(getattr(meta, 'triggers', []))
-        for key, val in list(namespace.items()):
-            if isinstance(val, trigger):
-                triggers.append(val)
-                del namespace[key]
-        setattr(meta, 'triggers', tuple(triggers))
-
-        namespace['__meta__'] = meta
-
-        if namespace.get('Config'):
-            setattr(namespace.get('Config'), 'gridfs', lambda: new.gridfs)
-        else:
-            new_type = type('Config', (type, ), {'gridfs': lambda: new.gridfs})
-            namespace['Config'] = new_type
-
-        namespace['__classes__'] = []
-
-        new = super().__new__(cls, name, bases, namespace, **kwds)
-
-        if _is_base_document_class_defined:
-            pass
-
-        new.update_forward_refs()
-
-        return new
-
-
-_is_base_document_class_defined = False
-
-
-def exclude_values(v: T, value) -> T:
-    if isinstance(v, dict):
-        return {k: exclude_values(v, value) for k, v in v.items() if v != value}  # type: ignore
-
-    if sequence_like(v):
-        seq = (exclude_values(val, value) for val in v if val != value)  # type: ignore
-        return v.__class__(*seq) if is_namedtuple(v.__class__) else v.__class__(seq)
-
-    return v
-
-
-def exclude_undefined_values(v: T) -> T:
-    return exclude_values(v, undefined)
-
-
-def exclude_none_values(v: T) -> T:
-    return exclude_values(v, None)
-
-
-def json_dumps(v, *, default, exclude_undefined=True):
-    if exclude_undefined:
-        v = exclude_undefined_values(v)
-
-    return orjson.dumps(v, default=default).decode()
-
-
-def fallback_pickle_encoder(value):
-    return Binary(pickle.dumps(value), USER_DEFINED_SUBTYPE)
-
-
-class PickledBinaryDecoder(TypeDecoder):
-    bson_type = Binary
-
-    def transform_bson(self, value: Any) -> Any:
-        if value.subtype == USER_DEFINED_SUBTYPE:
-            return pickle.loads(value)
-        return value
-
-
-class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclass):
-    if TYPE_CHECKING:
-        __triggers__: ClassVar[dict[Type[BaseModel[ModelIdType]], dict[Type[trigger], list[trigger]]]]
-        __meta__: ClassVar[Type[BaseMeta]]
-        __registry__: ClassVar[list[Type[BaseModel[ModelIdType]]]]
-        __classes__: ClassVar[list[str]]
-
-        _olds: DictStrAny = PrivateAttr({})
-
-    else:
-        __triggers__: ClassVar[
-            dict[
-                Type[BaseModel[ModelIdType]],
-                dict[Type[trigger], list[trigger]]
-            ]
-        ] = defaultdict(lambda: defaultdict(list))  # yapf: disable
-        __registry__: ClassVar[
-            list[Type[BaseModel[ModelIdType]]]
-        ] = []  # yapf: disable
-        __classes__: ClassVar[list[str]] = []
-        _olds = PrivateAttr({})
-
-    id: Undefined[ModelIdType] = undefined
-
-    def __init_subclass__(cls):
+    def __init_subclass__(cls) -> None:
         super().__init_subclass__()
-        cls.__registry__.append(cls)
-
-        for trig in cls.__meta__.triggers:
-            bases = inspect.getmro(trig.__class__)
-            for base in bases:
-                if issubclass(base, trigger):
-                    cls.__triggers__[cls][base].append(trig)
-
-        if cls.__meta__.collection_name:
-            coll_name = cls.__meta__.collection_name
-            for klass in cls.__registry__:
-                if klass.__meta__.collection_name == coll_name:
-                    if issubclass(cls, klass):
-                        klass.__classes__.append(cls.__name__)
 
     class Meta:
-        indexes = ('_id', )
-        type_codecs = (PickledBinaryDecoder(), )
+        """Base settings for collections."""
+
+        indexes = ("_id",)
+        type_codecs = (PickledBinaryDecoder(),)
 
     class Config:
+        """Base pydantic settings for models."""
+
         validate_assignment = True
         validate_all = True
-        fields = {'id': '_id'}
+        fields = {"id": "_id"}
         json_dumps = json_dumps
+        json_loads = orjson.loads
+        allow_population_by_field_name = True
 
     @property
     def is_created(self) -> bool:
+        """Check if model created."""
         return self.id is not undefined and self.id is not None
 
-    def dict(self, **kwargs: Any) -> DictStrAny:
-        # kwargs.setdefault('by_alias', True)
-        exclude_undefined = kwargs.pop('exclude_undefined', True)
-        values = super().dict(**kwargs)
+    def dict(
+        self,
+        *,
+        include: AbstractSetIntStr | MappingIntStrAny | None = None,
+        exclude: AbstractSetIntStr | MappingIntStrAny | None = None,
+        by_alias: bool = False,
+        skip_defaults: bool | None = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+        exclude_undefined: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Generate a dictionary representation of the model.
+
+        Optionally specifying which fields to include or exclude.
+        """
+        values = super().dict(
+            include=include,
+            exclude=exclude,
+            by_alias=by_alias,
+            skip_defaults=skip_defaults,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+        )
 
         if exclude_undefined:
             values = exclude_undefined_values(values)
 
-        return values
+        return values  # noqa: RET504
 
-    def json(self, **kwargs: Any) -> str:
-        kwargs.setdefault('exclude_undefined', True)
-        return super().json(**kwargs)
+    def json(
+        self,
+        *,
+        include: AbstractSetIntStr | MappingIntStrAny | None = None,
+        exclude: AbstractSetIntStr | MappingIntStrAny | None = None,
+        by_alias: bool = False,
+        skip_defaults: bool | None = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+        exclude_undefined: bool = True,
+        encoder: Callable[[Any], Any] | None = None,
+        models_as_dict: bool = True,
+        **dumps_kwargs: Any,
+    ) -> str:
+        """
+        Generate a JSON representation of the model.
 
-    def _dump(self) -> DictStrAny:
+        `include` and `exclude` arguments as per `dict()`.
+        `encoder` is an optional function to supply as `default` to json.dumps(),
+        other arguments as per `json.dumps()`.
+        """
+        return super().json(
+            include=include,
+            exclude=exclude,
+            by_alias=by_alias,
+            skip_defaults=skip_defaults,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+            exclude_undefined=exclude_undefined,
+            encoder=encoder,
+            models_as_dict=models_as_dict,
+            **dumps_kwargs,
+        )
+
+    def _dump(self) -> Dict[str, Any]:  # noqa: UP006
         return self.dict(
-            exclude_undefined=True,
             exclude=None,
             include=None,
+            exclude_undefined=True,
             exclude_defaults=False,
             exclude_none=False,
             exclude_unset=False,
@@ -261,66 +159,69 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         )
 
     @classmethod
-    def _load(cls: Type[M], data: DictStrAny) -> M:
+    def _load(cls, data: Mapping[str, Any]) -> Self:
         doc = cls(**data)
-        doc._olds = data
+        doc._olds = data  # noqa: SLF001
         return doc
 
+    @classproperty
     @classmethod
-    @property
     def client(cls) -> AsyncIOMotorClient:
+        """Mongo client."""
         if not cls.__meta__.client:
-            raise ValueError('client required')
+            raise ModelClientError
 
         if not isinstance(cls.__meta__.client, AsyncIOMotorClient):
-            raise TypeError('AsyncIOMotorClient is required')
+            raise ModelClientError
 
         return cls.__meta__.client
 
+    @classproperty
     @classmethod
-    @property
     def database_name(cls) -> str:
+        """Mongo database name."""
         if not cls.__meta__.database_name:
-            raise ValueError('database name is required')
+            raise ModelDatabaseNameError
 
         if not isinstance(cls.__meta__.database_name, str):
-            raise TypeError('str required')
+            raise ModelDatabaseNameError
 
         return cls.__meta__.database_name
 
+    @classproperty
     @classmethod
-    @property
     def collection_name(cls) -> str:
+        """Mongo collection name."""
         if not cls.__meta__.collection_name:
-            raise ValueError('collection name required')
+            raise ModelCollectionNameError
 
         if not isinstance(cls.__meta__.collection_name, str):
-            raise TypeError('str required')
+            raise ModelCollectionNameError
 
         return cls.__meta__.collection_name
 
+    @classproperty
     @classmethod
-    @property
     def database(cls) -> AsyncIOMotorDatabase:
+        """Motor database."""
         return cls.client.get_database(cls.database_name)
 
+    @classproperty
     @classmethod
-    @property
     def collection(cls) -> AsyncIOMotorCollection:
-        return cls.database.get_collection(cls.collection_name, codec_options=cls._codec_options)
+        """Motor collection."""
+        return cls.database.get_collection(
+            cls.collection_name,
+            codec_options=cls._codec_options,
+        )
 
+    @classproperty
     @classmethod
-    @property
-    def gridfs(cls) -> AsyncIOMotorGridFSBucket:
-        return AsyncIOMotorGridFSBucket(cls.database)
-
-    @classmethod
-    @property
-    def _codec_options(cls) -> CodecOptions:
+    def _codec_options(cls) -> CodecOptions[Any]:
         return CodecOptions(type_registry=cls._type_registry)
 
+    @classproperty
     @classmethod
-    @property
     def _type_registry(cls) -> TypeRegistry:
         return TypeRegistry(
             type_codecs=cls.__meta__.type_codecs,
@@ -328,8 +229,10 @@ class BaseModel(PydanticModel, Generic[ModelIdType], metaclass=BaseModelMetaclas
         )
 
     @classmethod
-    def get_triggers(cls, type: Type[trigger]) -> list[trigger]:
-        return cls.__triggers__[cls][type]
-
-
-_is_base_document_class_defined = True
+    def _get_triggers(
+        cls,
+        type_: type[trigger[T, P, R]],
+    ) -> Generator[trigger[T, P, R], None, None]:
+        for tr in cls.__meta__.triggers:
+            if isinstance(tr, type_):
+                yield tr

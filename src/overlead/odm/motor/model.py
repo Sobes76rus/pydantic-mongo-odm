@@ -1,54 +1,73 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
-from collections.abc import Awaitable
-from typing import IO
-from typing import Any
-from typing import Dict
-from typing import Generic
-from typing import Optional
-from typing import Type
-from typing import TypeVar
-from typing import Union
-from typing import overload
+from typing import (
+    IO,
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    ParamSpec,
+    Self,
+    TypeAlias,
+    TypeVar,
+)
 
-from motor.core import AgnosticClientSession
-from pymongo import DeleteMany
-from pymongo import DeleteOne
-from pymongo import InsertOne
-from pymongo import ReplaceOne
-from pymongo import UpdateMany
-from pymongo import UpdateOne
-from pymongo.results import BulkWriteResult
-from pymongo.results import DeleteResult
-from pymongo.results import InsertManyResult
-from pymongo.results import InsertOneResult
-from pymongo.results import UpdateResult
+from motor.motor_asyncio import AsyncIOMotorClientSession, AsyncIOMotorGridFSBucket
 
 from overlead.odm import triggers
+from overlead.odm.errors import ModelNotCreatedError
 from overlead.odm.fields import ObjectId
 from overlead.odm.model import BaseModel
-from overlead.odm.triggers import trigger
-from overlead.odm.types import Undefined
-from overlead.odm.types import UndefinedType
-from overlead.odm.types import undefined
+from overlead.odm.types import (
+    Undefined,
+    classproperty,
+    isnotundefined,
+    isundefined,
+    undefined,
+)
 
 from .cursor import MotorCursor
 
-__all__ = ['MotorModel', 'ObjectIdModel']
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Sequence
 
-T = TypeVar('T')
-V = TypeVar('V')
-M = TypeVar('M', bound='MotorModel')
+    from motor.core import AgnosticClientSession
+    from pymongo import (
+        DeleteMany,
+        DeleteOne,
+        InsertOne,
+        ReplaceOne,
+        UpdateMany,
+        UpdateOne,
+    )
+    from pymongo.results import (
+        BulkWriteResult,
+        DeleteResult,
+        InsertManyResult,
+        InsertOneResult,
+        UpdateResult,
+    )
+
+    from overlead.odm.triggers import trigger
 
 
-class MotorModel(BaseModel[T], Generic[T]):
-    @overload
-    async def save(self: M) -> M:
-        ...
+__all__ = ["MotorModel", "ObjectIdModel"]
 
-    async def save(self: MotorModel[T]) -> MotorModel[T]:
+_IdType = TypeVar("_IdType", covariant=True)
+_P = ParamSpec("_P")
+_DocumentType: TypeAlias = dict[str, Any]
+_MotorModelType: TypeAlias = BaseModel[_IdType]
+
+logger = logging.getLogger()
+
+
+class MotorModel(_MotorModelType[_IdType], Generic[_IdType]):
+    """Base class for MongoDB models."""
+
+    async def save(self) -> Self:
+        """Save model."""
         await self.run_triggers(triggers.before_save)
 
         if not self.is_created:
@@ -59,10 +78,13 @@ class MotorModel(BaseModel[T], Generic[T]):
             result = await self.insert_one(data)
             self.id = result.inserted_id
             self._olds = data
-            self._olds['_id'] = self.id
+            self._olds["_id"] = self.id
 
             await self.run_triggers(triggers.after_create)
-            await self.run_triggers(triggers.after_save, created=True)
+            await self.run_triggers(
+                triggers.after_save,
+                created=True,  # pyright: ignore
+            )
 
             return self
 
@@ -72,7 +94,7 @@ class MotorModel(BaseModel[T], Generic[T]):
         data = self._dump()
 
         keys = set(data) | set(olds)
-        upds: Dict[str, Dict[str, Any]] = defaultdict(dict)
+        upds: dict[str, dict[str, Any]] = defaultdict(dict)
 
         for key in keys:
             new = data.get(key, undefined)
@@ -82,64 +104,81 @@ class MotorModel(BaseModel[T], Generic[T]):
                 continue
 
             if new is undefined:
-                upds['$unset'][key] = ''
+                upds["$unset"][key] = ""
 
             else:
-                upds['$set'][key] = new
+                upds["$set"][key] = new
 
         if upds:
-            await self.update_one({'_id': self.id}, upds)
+            await self.update_one({"_id": self.id}, upds)
 
         self._olds = data
 
         await self.run_triggers(triggers.after_update)
-        await self.run_triggers(triggers.after_save, created=False)
+        await self.run_triggers(
+            triggers.after_save,
+            created=False,  # pyright: ignore
+        )
 
         return self
 
-    @overload
-    async def delete(self: M) -> M:
-        ...
-
-    async def delete(self: MotorModel[T]) -> MotorModel[T]:
+    async def delete(self) -> Self:
+        """Delete model."""
         if not self.is_created:
-            raise ValueError(f'object is not created\n{self}')
+            raise ModelNotCreatedError(self)
 
         await self.run_triggers(triggers.before_delete)
-        await self.delete_one({'_id': self.id})
+        await self.delete_one({"_id": self.id})
         await self.run_triggers(triggers.after_delete)
         return self
 
     @classmethod
-    async def find_one(cls: Type[M], *args: Any, **kwargs: Any) -> Optional[M]:
-        kwargs['limit'] = 1
+    async def find_one(cls, *args: Any, **kwargs: Any) -> Self | None:
+        """Find one document."""
+        kwargs["limit"] = 1
         item = await cls.collection.find_one(*args, **kwargs)
         return cls._load(item) if item is not None else None
 
     @classmethod
-    def find(cls: Type[M], *args: Any, **kwargs: Any) -> MotorCursor[M]:
-        return MotorCursor(cls, cls.collection.find(*args, **kwargs))
+    def find(
+        cls,
+        filter: dict[str, Any],  # noqa: A002
+        *args: Any,
+        **kwargs: Any,
+    ) -> MotorCursor[Self]:
+        """Fine many documents."""
+        # filter.setdefault('_cls', cls.__name__)
+        return MotorCursor(cls, cls.collection.find(filter, *args, **kwargs))
 
     @classmethod
     def insert_one(cls, *args: Any, **kwargs: Any) -> Awaitable[InsertOneResult]:
+        """Insert one document."""
         return cls.collection.insert_one(*args, **kwargs)
 
     @classmethod
     def update_one(cls, *args: Any, **kwargs: Any) -> Awaitable[UpdateResult]:
+        """Update one document."""
         return cls.collection.update_one(*args, **kwargs)
 
     @classmethod
     def delete_one(cls, *args: Any, **kwargs: Any) -> Awaitable[DeleteResult]:
+        """Delete one document."""
         return cls.collection.delete_one(*args, **kwargs)
 
     @classmethod
     def insert_many(
         cls,
-        documents: list,
+        documents: list[Any],
         ordered: bool = True,
         bypass_document_validation: bool = False,
-        session: Optional[AgnosticClientSession] = None,
+        session: AgnosticClientSession | None = None,
     ) -> Awaitable[InsertManyResult]:
+        """Insert many documents."""
+        documents = [
+            doc._dump() if isinstance(doc, MotorModel) else doc  # noqa: SLF001
+            for doc in documents
+        ]
+
         return cls.collection.insert_many(
             documents=documents,
             ordered=ordered,
@@ -149,25 +188,36 @@ class MotorModel(BaseModel[T], Generic[T]):
 
     @classmethod
     def update_many(cls, *args: Any, **kwargs: Any) -> Awaitable[UpdateResult]:
+        """Update many documents."""
         return cls.collection.update_many(*args, **kwargs)
 
     @classmethod
     def delete_many(cls, *args: Any, **kwargs: Any) -> Awaitable[DeleteResult]:
+        """Delete many documents."""
         return cls.collection.delete_many(*args, **kwargs)
 
     @classmethod
     def count_documents(cls, *args: Any, **kwargs: Any) -> Awaitable[int]:
+        """Count documents."""
         return cls.collection.count_documents(*args, **kwargs)
 
     @classmethod
     def bulk_write(
         cls,
-        requests: list[Union[InsertOne, UpdateOne, UpdateMany, ReplaceOne, DeleteOne, DeleteMany]],
+        requests: Sequence[
+            InsertOne[_DocumentType]
+            | UpdateOne
+            | UpdateMany
+            | ReplaceOne[_DocumentType]
+            | DeleteOne
+            | DeleteMany
+        ],
         *,
         ordered: bool = True,
         bypass_document_validation: bool = False,
-        session: Optional[AgnosticClientSession] = None,
+        session: AgnosticClientSession | None = None,
     ) -> Awaitable[BulkWriteResult]:
+        """Bluk write."""
         return cls.collection.bulk_write(
             requests,
             ordered=ordered,
@@ -177,74 +227,87 @@ class MotorModel(BaseModel[T], Generic[T]):
 
     @classmethod
     def aggregate(cls, pipeline: list[dict[str, Any]], **kwargs: Any) -> Any:
+        """Aggregate."""
         return cls.collection.aggregate(pipeline, **kwargs)
 
     @classmethod
-    async def ensure_indexes(cls) -> None:
+    async def ensure_indexes(
+        cls,
+        session: AsyncIOMotorClientSession | None = None,
+    ) -> None:
+        """Ensure all indexes in collections created."""
+        logger.info("%s: Ensure indexes", cls)
         indexes = cls.__meta__.indexes
         for index in indexes:
-            index = index.dict()
-            keys, opts = index['keys'], index['opts']
+            index_vals = index.dict()
+            keys, opts = index_vals["keys"], index_vals["opts"]
             keys = list(keys.items())
 
-            await cls.collection.create_index(keys, **opts)
+            # if cls.__meta__.cls_constraint:
+            #     opts['partialFilterExpression'] = {
+            #         **cls.__meta__.partial_filter_expression,
+            #         **opts.get('partialFilterExpression', {}),
+            #     }
+
+            await cls.collection.create_index(keys, **opts, session=session)
 
     @classmethod
     async def ensure_all_indexes(cls) -> None:
+        """Ensure all indexes in all collections created."""
         for collection in cls.__registry__:
             if issubclass(collection, cls):
-                try:
-                    collection.collection
-                except ValueError:
-                    continue
-
-                print(f'{collection}: Ensure indexes')
                 await collection.ensure_indexes()
 
-    async def run_triggers(self, type: Type[trigger], **kwargs):
-        def wrapper(func):
-            async def wrapt(*args, **kwargs):
-                return asyncio.to_thread(func, *args, **kwargs)
+    async def run_triggers(
+        self,
+        type_: type[trigger[Self, _P, Any]],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> None:
+        """Execute triggers."""
+        for trig in self._get_triggers(type_):
+            for value in trig._exec(self, *args, **kwargs):  # noqa: SLF001
+                while asyncio.iscoroutine(value):
+                    value = await value  # noqa: PLW2901
 
-            return wrapt
-
-        for trig in self.get_triggers(type):
-            if not asyncio.iscoroutinefunction(trig.func):
-                trig.func = wrapper(trig.func)
-
-            gen = trig.exec(self, **kwargs)
-            val = None
-
-            try:
-                while True:
-                    val = gen.send(val)
-                    while asyncio.iscoroutine(val):
-                        val = await val
-
-            except StopIteration:
-                pass
+    @classproperty
+    @classmethod
+    def gridfs(cls) -> AsyncIOMotorGridFSBucket:
+        """Access to GridFS."""
+        return AsyncIOMotorGridFSBucket(cls.database)
 
     @classmethod
     async def upload_file(
         cls,
         filename: str,
-        data: Undefined[Optional[Union[str, bytes, IO[Any]]]],
-        metadata: dict[str, Any] = None,
-        id: Any = None,
-    ) -> Optional[Undefined[ObjectId]]:
+        data: Undefined[str | bytes | IO[Any] | None],
+        metadata: dict[str, Any] | None = None,
+        id: ObjectId | None = None,  # noqa: A002
+    ) -> Undefined[ObjectId] | None:
+        """Upload file to GridFS."""
         if data is None:
-            return data
+            return None
 
-        if data is undefined:
+        if isundefined(data):
             return undefined
+
+        assert isnotundefined(data)
 
         if isinstance(data, str):
             data = data.encode()
 
-        id = id or ObjectId()
-        await cls.gridfs.upload_from_stream_with_id(id, filename, data, metadata=metadata)
+        id = id or ObjectId()  # noqa: A001
+        await cls.gridfs.upload_from_stream_with_id(
+            id,
+            filename,
+            data,
+            metadata=metadata,
+        )
         return id
 
 
-class ObjectIdModel(MotorModel[ObjectId]):
-    pass
+_ObjectIdModelType: TypeAlias = MotorModel[ObjectId]
+
+
+class ObjectIdModel(_ObjectIdModelType):
+    """Model with `ObjectId` type of `id` attribute."""

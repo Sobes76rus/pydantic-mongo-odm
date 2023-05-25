@@ -1,96 +1,107 @@
 from __future__ import annotations
 
 import enum
-from typing import TYPE_CHECKING
-from typing import Awaitable
-from typing import Generic
-from typing import Type
-from typing import TypeVar
-from typing import Union
-from typing import overload
+from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar, cast
 
-from pydantic.fields import ModelField
-
-from overlead.odm.fields.objectid_field import ObjectId
-from overlead.odm.fields.objectid_field import ObjectIdType
+from overlead.odm.fields.objectid_field import (
+    ObjectId,
+    ObjectIdDocumentIsNotCreatedError,
+    ObjectIdType,
+)
 from overlead.odm.model import BaseModel
 
-M = TypeVar('M', bound=BaseModel)
+if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Awaitable
 
-if TYPE_CHECKING:
+    from pydantic.fields import ModelField
+
     from overlead.odm.motor.model import MotorModel
-    MM = TypeVar('MM', bound=MotorModel)
+
+M = TypeVar("M", bound="MotorModel")  # type: ignore[type-arg]
+
+
+class ReferenceModelTypeRequiredError(TypeError):
+    """Модель не указана."""
+
+    def __init__(self) -> None:
+        super().__init__("Model required.")
+
+
+class ReferenceModelTypeInvalidError(TypeError):
+    """Неподходящая модель в ссылке."""
+
+    def __init__(self, type_: Any) -> None:
+        super().__init__(f"Invalid model: {type_}")
+
+
+class ReferenceDocumentModelError(TypeError):
+    """Неподходящая модель документа."""
+
+    def __init__(self, v: Any, type_: Any) -> None:
+        super().__init__(f"Invalid document model: {v}, should be {type_}")
 
 
 class DeleteRule(str, enum.Enum):
-    NOTHING = 'NOTHING'
-    NULLIFY = 'NULLIFY'
-    CASCADE = 'CASCADE'
-    DENY = 'DENY'
+    """Поведение при удалении зависимого документа."""
+
+    NOTHING = "NOTHING"
+    NULLIFY = "NULLIFY"
+    CASCADE = "CASCADE"
+    DENY = "DENY"
 
 
 class Reference(ObjectId, Generic[M]):
-    type_: Type[M]
+    """Ссылка на документ."""
+
+    type_: type[M]
     field: ModelField
 
-    def __init__(self, v: ObjectIdType, type_: Type[M], field: ModelField) -> None:
+    def __init__(self, v: ObjectIdType, type_: type[M], field: ModelField) -> None:
         super().__init__(v)
 
         if not issubclass(type_, BaseModel):
-            raise TypeError(f'invalid reference: {type_}')
+            raise ReferenceModelTypeInvalidError(type_)
 
         self.type_ = type_
         self.field = field
 
     @classmethod
-    def validate(cls, v: Union[ObjectIdType, BaseModel], field: ModelField) -> Reference[M]:
+    def __validate__(cls, v: Any, field: ModelField) -> Self:
         if not field.sub_fields:
-            raise TypeError('required')
+            raise ReferenceModelTypeRequiredError
 
         type_ = field.sub_fields[0].type_
-
         if not issubclass(type_, BaseModel):
-            raise TypeError(f'invalid reference: {type_}')
+            raise ReferenceModelTypeInvalidError(type_)
 
         if isinstance(v, Reference):
             if v.type_ != type_:
-                raise TypeError(f'invalid reference: {v.type_}')
+                raise ReferenceModelTypeInvalidError(v.type_)
 
-            return v
+            return cast(Self, v)
 
         if isinstance(v, type_):
             if v.is_created:
-                return cls(v.id, type_, field)
+                return cls(v.id, type_, field)  # pyright: ignore
 
-            raise ValueError('document is not created')
+            raise ObjectIdDocumentIsNotCreatedError(v)
 
-        return cls(ObjectId.validate(v), type_, field)
+        if isinstance(v, BaseModel):
+            raise ReferenceDocumentModelError(v, type_)
 
-    @overload
-    def load(self: Reference['MM']) -> Awaitable['MM']:
-        ...
+        return cls(super().__validate__(v, field), type_, field)  # pyright: ignore
 
-    @overload
-    def load(self: Reference[M]) -> M:
-        ...
+    def load(self) -> Awaitable[M | None] | M | None:
+        """Загрузить документ."""
+        return self.type_.find_one({"_id": self})
 
-    def load(self):
-        return self.type_.find_one({'_id': self})
-
-    @classmethod
-    def __modify_schema__(self, field_schema):
-        field_schema.update(
-            type='string',
-            examples=["5eb7cf5a86d9755df3a6c593", "5eb7cfb05e32e07750a1756a"],
-        )
-
-    def __getstate__(self):
+    def __getstate__(self) -> dict[str, Any]:  # type: ignore[override]
         state = self.__dict__.copy()
-        state['_ObjectId__id'] = self._ObjectId__id
-        if 'field' in state:
-            del state['field']
+        state["_ObjectId__id"] = self._ObjectId__id
+        if "field" in state:
+            del state["field"]
         return state
 
-    def __setstate__(self, state):
-        self._ObjectId__id = state.pop('_ObjectId__id')
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self._ObjectId__id = state.pop("_ObjectId__id")
         self.__dict__.update(state)

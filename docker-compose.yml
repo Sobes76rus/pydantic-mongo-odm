@@ -4,4 +4,22 @@ services:
   mongodb:
     image: mongo:latest
     ports:
-      - 0:27017
+      - 27017:27017
+    command: mongod --replSet pytestRs --bind_ip_all
+
+  mongodb-setup:
+    image: mongo:latest
+    depends_on:
+      - mongodb
+    environment:
+      - MONGO=mongodb
+      - PORT=27017
+      - RS=pytestRs
+    volumes:
+      - ./rs-init.sh:/scripts/rs-init.sh
+    entrypoint: ["bash", "/scripts/rs-init.sh"]
+
+networks:
+  default:
+    name: pytest
+    driver: bridge

@@ -1,130 +1,167 @@
-from typing import Any
-from typing import Optional
-from xml.dom import InvalidAccessErr
+from typing import Any, TypeAlias
 
+import orjson
 import pytest
-from motor.motor_asyncio import AsyncIOMotorClient
-from motor.motor_asyncio import AsyncIOMotorCollection
-from motor.motor_asyncio import AsyncIOMotorDatabase
-from pydantic import AnyHttpUrl
-from pydantic import BaseModel as PydanticModel
-from pymongo import MongoClient
 
+from overlead.odm import triggers
 from overlead.odm.client import get_client
+from overlead.odm.errors import (
+    ModelClientError,
+    ModelCollectionNameError,
+    ModelDatabaseNameError,
+)
+from overlead.odm.index import Index
 from overlead.odm.model import BaseModel
-from overlead.odm.types import Undefined
-from overlead.odm.types import undefined
+from overlead.odm.types import Undefined, undefined
+from overlead.odm.utils import PickledBinaryDecoder
+
+X: TypeAlias = BaseModel[int]
 
 
-class ModelTest(BaseModel[Any]):
-    value: Optional[str]
+class ModelTest(X):
+    value: str | None
+    value_u: Undefined[str] = undefined
 
     class Meta:
-        client = get_client(motor=True)
-        database_name = 'test'
-        collection_name = 'test'
+        client = get_client()
+        database_name = "database_name"
+        collection_name = "collection_name"
 
 
-@pytest.mark.parametrize('value', [
-    get_client(motor=False),
-    MongoClient(),
-    AsyncIOMotorClient,
-    123,
-    '123',
-])
-def test_client_wrong_type(value):
-    class TestModel(BaseModel):
-        class Meta:
-            client = value
+class TestModelType:
+    def test_meta_indexes(self) -> None:
+        meta = BaseModel.__meta__
+        assert meta.indexes == (Index.parse_obj("_id"),)
 
-    with pytest.raises(TypeError) as exc:
-        TestModel.client
+    def test_meta_type_codecs(self) -> None:
+        meta = BaseModel.__meta__
+        match meta.type_codecs:
+            case (PickledBinaryDecoder(),):
+                ...
+            case _:  # pragma: no cover
+                pytest.fail(f"{meta.type_codecs}")
 
-    assert 'AsyncIOMotorClient is required' in str(exc)
+    def test_client(self) -> None:
+        assert ModelTest.client == get_client()
 
+    def test_no_client(self) -> None:
+        with pytest.raises(ModelClientError):
+            BaseModel.client
 
-def test_client_correct_type():
-    assert isinstance(ModelTest.client, AsyncIOMotorClient)
+    def test_invalid_client(self) -> None:
+        BaseModel.__meta__.client = 123  # type: ignore[assignment]
+        with pytest.raises(ModelClientError):
+            BaseModel.client
 
+    def test_database_name(self) -> None:
+        assert ModelTest.database_name == "database_name"
 
-@pytest.mark.parametrize('value', [
-    '123',
-    '321',
-    'test_overdrive',
-    'test.overdrive',
-])
-def test_client_correct_database_name(value):
-    class TestModel(BaseModel):
-        class Meta:
-            database_name = value
+    def test_no_database_name(self) -> None:
+        with pytest.raises(ModelDatabaseNameError):
+            BaseModel.database_name
 
-    assert TestModel.database_name == value
+    def test_invalid_database_name(self) -> None:
+        BaseModel.__meta__.database_name = 123  # type: ignore[assignment]
+        with pytest.raises(ModelDatabaseNameError):
+            BaseModel.database_name
 
+    def test_collection_name(self) -> None:
+        assert ModelTest.collection_name == "collection_name"
 
-@pytest.mark.parametrize('value', [123, ModelTest, InvalidAccessErr, str])
-def test_client_wrong_database_name(value):
-    class TestModel(BaseModel):
-        class Meta:
-            database_name = value
+    def test_no_collection_name(self) -> None:
+        with pytest.raises(ModelCollectionNameError):
+            BaseModel.collection_name
 
-    with pytest.raises(TypeError) as exc:
-        TestModel.database_name
+    def test_invalid_collection_name(self) -> None:
+        BaseModel.__meta__.collection_name = 123  # type: ignore[assignment]
+        with pytest.raises(ModelCollectionNameError):
+            BaseModel.collection_name
 
-    assert 'str required' in str(exc)
+    def test_database(self) -> None:
+        assert ModelTest.database == ModelTest.client["database_name"]
 
+    def test_collection(self) -> None:
+        assert (
+            ModelTest.collection == ModelTest.client["database_name"]["collection_name"]
+        )
 
-def test_database_correct_type():
-    assert isinstance(ModelTest.database, AsyncIOMotorDatabase)
+    def test_load(self) -> None:
+        value = 123
+        model = ModelTest._load({"_id": 123, "value": "test value"})  # noqa: SLF001
+        assert model.id == value
+        assert model.value == "test value"
+        assert model._olds == {"_id": 123, "value": "test value"}  # noqa: SLF001
 
+    def test_get_triggers(self) -> None:
+        class Model(BaseModel[Any]):
+            @triggers.before_save()
+            def a(self) -> None:  # pragma: no cover
+                ...
 
-def test_database_correct_name():
-    assert ModelTest.database.name == ModelTest.database_name
+            @triggers.before_delete()
+            def b(self) -> None:  # pragma: no cover
+                ...
 
-
-def test_collection_correct_type():
-    assert isinstance(ModelTest.collection, AsyncIOMotorCollection)
-
-
-def test_collection_correct_name():
-    assert ModelTest.collection.name == ModelTest.collection_name
-
-
-@pytest.mark.parametrize('value, type_, msg', [
-    (123, TypeError, 'str required'),
-    (ModelTest, TypeError, 'str required'),
-    (InvalidAccessErr, TypeError, 'str required'),
-    (str, TypeError, 'str required'),
-    (None, ValueError, 'collection name required'),
-    ('', ValueError, 'collection name required'),
-])
-def test_client_wrong_collection_name(value, type_, msg):
-    class TestModel(BaseModel):
-        class Meta:
-            collection_name = value
-
-    with pytest.raises(type_) as exc:
-        TestModel.collection_name
-
-    assert msg in str(exc)
+        assert len(list(Model._get_triggers(triggers.before_save))) == 1
+        assert len(list(Model._get_triggers(triggers.trigger))) == 2  # noqa: PLR2004
+        assert len(list(Model._get_triggers(triggers.after_save))) == 0
+        assert len(list(Model._get_triggers(triggers.before_delete))) == 1
 
 
-@pytest.mark.parametrize('value', ['123', '321', 'required', 'str.required'])
-def test_client_correct_collection_name(value):
-    class TestModel(BaseModel):
-        class Meta:
-            collection_name = value
+class TestModelInstance:
+    @pytest.fixture(autouse=True)
+    def _model_fixture(self) -> None:
+        self.model = ModelTest(value="test value")
 
-    assert TestModel.collection_name == value
+    def test_is_created(self) -> None:
+        assert not self.model.is_created
+        self.model.id = 123
+        assert self.model.is_created
+
+    def test_dict(self) -> None:
+        assert self.model.dict() == {"value": "test value"}
+        self.model.value = None
+        assert self.model.dict() == {"value": None}
+
+    def test_dump(self) -> None:
+        assert self.model._dump() == {"value": "test value"}  # noqa: SLF001
+        self.model.value = None
+        assert self.model._dump() == {"value": None}  # noqa: SLF001
+
+    def test_dump_undefined(self) -> None:
+        model = ModelTest(value_u="some value", value="some value")
+        assert model._dump() == {  # noqa: SLF001
+            "value": "some value",
+            "value_u": "some value",
+        }
+        model.value = None
+        model.value_u = undefined
+        assert model._dump() == {"value": None}  # noqa: SLF001
+
+    def test_dump_default(self) -> None:
+        class Model(BaseModel[Any]):
+            a: Undefined[str] = undefined
+            b: str | None = None
+            c: str = "value c"
+
+        model = Model()
+        assert model._dump() == {"b": None, "c": "value c"}  # noqa: SLF001
+
+    def test_json_undefined(self) -> None:
+        class Model(BaseModel[Any]):
+            a: Undefined[str] = undefined
+            b: str | None = None
+            c: str = "value c"
+
+        model = Model()
+        assert model.json() == orjson.dumps({"b": None, "c": "value c"}).decode()
 
 
-def test_any_http_url_with_undefined():
-    class A(BaseModel):
-        u: Undefined[AnyHttpUrl] = undefined
+@pytest.mark.skip()
+def test_schema() -> None:
+    assert ModelTest.schema()
 
-    class Form(PydanticModel):
-        u: Optional[AnyHttpUrl]
 
-    a = A(u='http://overlead.me')
-    f = Form(u='http://overlead.me')
-    assert type(f.u) == AnyHttpUrl
-    A.u = f.u
+@pytest.mark.skip()
+def test_schema_json() -> None:
+    assert ModelTest.schema_json() is None
