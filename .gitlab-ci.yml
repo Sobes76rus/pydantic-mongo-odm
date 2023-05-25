@@ -1,27 +1,15 @@
-image: python:3.9
+image: python:3.11
 
 stages:
-  # - setup
-  # - test
   - publish
-
-# install:
-#   stage: setup
-#   script:
-#     - pip install poetry
-
-# test:
-#   stage: test
-#   script:
-#     - poetry run task test
 
 publish-package:
   stage: publish
   script:
-    - pip install poetry
+    - pip install poetry==1.5.0
     - poetry config repositories.gitlab https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/pypi
     - poetry config http-basic.gitlab gitlab-ci-token ${CI_JOB_TOKEN}
-    - bash ${POETRY_BUILD_LOCK}
+    # - bash ${POETRY_BUILD_LOCK}
     - poetry publish -r gitlab
   only:
     refs:
