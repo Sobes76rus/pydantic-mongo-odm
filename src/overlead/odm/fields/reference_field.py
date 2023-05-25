@@ -91,7 +91,7 @@ class Reference(ObjectId, Generic[M]):
 
         return cls(super().__validate__(v, field), type_, field)  # pyright: ignore
 
-    def load(self) -> Awaitable[M | None] | M | None:
+    def load(self) -> Awaitable[M | None]:
         """Загрузить документ."""
         return self.type_.find_one({"_id": self})
 
