@@ -9,8 +9,8 @@ publish-package:
     - pip install poetry==1.5.0
     - poetry config repositories.gitlab https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/packages/pypi
     - poetry config http-basic.gitlab gitlab-ci-token ${CI_JOB_TOKEN}
-    - bash ${POETRY_BUILD_LOCK}
-    - poetry publish -r gitlab
+    # - bash ${POETRY_BUILD_LOCK}
+    - poetry publish -r gitlab --build
   only:
     refs:
       - master
