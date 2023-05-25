@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "overlead-odm"
-version = "0.5.2"
+version = "0.5.3"
 description = "overlead mongodb odm"
 authors = ["Anton <myprojectorterrypratchett@gmail.com>"]
 packages = [
@@ -17,7 +17,7 @@ python = "~3.11"
 pydantic = "~1.10.7"
 pymongo = "~4.3.3"
 motor = "~3.1.2"
-orjson = "~3.5.3"
+orjson = "~3.8.13"
 wrapt = "~1.15.0"
 motor-types = "~1.0.0b2"
 
